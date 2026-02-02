@@ -1,0 +1,11 @@
+{
+  "name": "jsarena",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "type": "module",
+  "peerDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
