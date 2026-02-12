@@ -1,4 +1,3 @@
-
 export type ArenaLocation = bigint & { readonly __data_pointer: unique symbol };
 export interface ArenaOptions {
 	initalSize?: number
@@ -94,6 +93,7 @@ export class Arena {
 	}
 
 	public alloc(data: Uint8Array, headers?: ArenaCustomHeaders): ArenaLocation {
+		if (headers == undefined) headers = { header0: 0, header1: 0, header2: 0 }
 		const totalBlockSize = (data.byteLength + this.HEADER_SIZE_BYTES + this._allignMask) & ~this._allignMask;
 		const bucketIdx = (totalBlockSize >> this._allignShift) - 1;
 		if (bucketIdx >= 0 && bucketIdx < this._bucketcount) {
@@ -101,7 +101,7 @@ export class Arena {
 			if (count > 0) {
 				const recycledOffset = this._getBucketOffset(bucketIdx, count - 1);
 				this._setBucketCount(bucketIdx, count - 1);
-				this._initBlock(recycledOffset, data.length, headers || {});
+				this._initBlock(recycledOffset, data.length, headers);
 				return (BigInt(recycledOffset) << 32n | BigInt(this._view32[(recycledOffset >> SHIFTOFFSETS.BYTE_32) + HEADERS.GENERATION_BYTE_0_32]!)) as ArenaLocation
 			}
 		}
@@ -117,14 +117,13 @@ export class Arena {
 		const generation = BigInt(location as bigint) & 0xFFFFFFFFn
 		let length = this._view32[(start >> SHIFTOFFSETS.BYTE_32) + HEADERS.PAYLOAD_LENGTH_0_32]!
 		const diff = generation ^ BigInt(this._view32[((start >> SHIFTOFFSETS.BYTE_32) + HEADERS.GENERATION_BYTE_0_32)]!)
-		console.log(start, generation, diff)
 		if (diff !== 0n) return null
 		return this._view8.subarray(start + this.HEADER_SIZE_BYTES, start + this.HEADER_SIZE_BYTES + Number(length))
 	}
 	public free(location: ArenaLocation): ArenaLocation {
 		let start = Number(BigInt(location as bigint) >> 32n)
 		const currgen = this._view32[(start >> SHIFTOFFSETS.BYTE_32) + HEADERS.GENERATION_BYTE_0_32]!
-		this._view32[(start >> SHIFTOFFSETS.BYTE_32) + HEADERS.GENERATION_BYTE_0_32] = ((currgen + 1) & 0xFFFF)
+		this._view32[(start >> SHIFTOFFSETS.BYTE_32) + HEADERS.GENERATION_BYTE_0_32] = currgen + 1 // this part can wrap around
 		this._view8[start + HEADERS.DELETED_8] = 1
 		const totalBlockSize = this._view32[(start >> SHIFTOFFSETS.BYTE_32) + HEADERS.TOTAL_LENGTH_0_32]!
 		const bucketIdx = (totalBlockSize >> this._allignShift) - 1
@@ -159,8 +158,7 @@ export class Arena {
 	public reserve(size: number): Uint8Array {
 		const start = this._offset
 		this._checkForSpace(start + this.HEADER_SIZE_BYTES + size + this._allignMask & ~this._allignMask) && this._resize()
-		this._view32[(start >> SHIFTOFFSETS.BYTE_32) + HEADERS.PAYLOAD_LENGTH_0_32] = size
-		this._view8[start + HEADERS.DELETED_8] = 0
+		this._initBlock(start, size, {})
 		this._offset = this._offset + size + this.HEADER_SIZE_BYTES + this._allignMask & ~this._allignMask
 		return this._view8.subarray(start + this.HEADER_SIZE_BYTES, start + this.HEADER_SIZE_BYTES + size)
 	}
@@ -168,6 +166,14 @@ export class Arena {
 		let start = Number(BigInt(ptr as bigint) >> 32n)
 		const generation = BigInt(this._view32[(start >> SHIFTOFFSETS.BYTE_32) + HEADERS.GENERATION_BYTE_0_32]!)
 		console.log({ start, generation })
+	}
+	public readWithHeaders(ptr: ArenaLocation): Uint8Array | null {
+		let start = Number(BigInt(ptr as bigint) >> 32n)
+		const generation = BigInt(ptr as bigint) & 0xFFFFFFFFn
+		let length = this._view32[(start >> SHIFTOFFSETS.BYTE_32) + HEADERS.PAYLOAD_LENGTH_0_32]!
+		const diff = generation ^ BigInt(this._view32[((start >> SHIFTOFFSETS.BYTE_32) + HEADERS.GENERATION_BYTE_0_32)]!)
+		if (diff !== 0n) return null
+		return this._view8.subarray(start + 12, start + this.HEADER_SIZE_BYTES + Number(length))
 	}
 	public label(): Array<ArenaLocation> {
 		const ptrArray = new Array<ArenaLocation>()
@@ -199,17 +205,24 @@ export class Arena {
 			header2: Number(this._view8[start + HEADERS.USER_STATUS_2_8]!.toString()),
 		}
 	}
+	public estimate(size: number, amnt: number): number {
+		return (((size + this._allignMask) & ~this._allignMask) + this.HEADER_SIZE_BYTES) * amnt
+	}
 }
+//Tests
 if (process.argv[1] === `${__filename}`) {
 	console.log("running Tests")
-
 	const a = new Arena()
 	const testdata = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7])
 	const headers = { header0: 42, header1: 24, header2: 240 };
-	CheckPtrAccess(a, testdata, headers)
+	_testCheckPtrAccess(a, testdata, headers)
 }
 
-function CheckPtrAccess(a: Arena, testdata: Uint8Array, headers: ArenaCustomHeaders) {
+function _testCheckPtrAccess(a: Arena, testdata: Uint8Array, headers: ArenaCustomHeaders) {
+	// USE-AFTER-FREE
+	const useAfterFreePtr = a.alloc(testdata, headers)
+	a.free(useAfterFreePtr)
+	// free Slot reuse
 	const ptr = a.alloc(testdata, headers)
 	const res = a.read(ptr)
 	if (res == null) throw new Error(`${testdata} Could not read data`)
@@ -222,7 +235,14 @@ function CheckPtrAccess(a: Arena, testdata: Uint8Array, headers: ArenaCustomHead
 	if (resultheaders.header2 !== headers.header2) throw new Error(`header2: got: ${resultheaders.header2} needed: ${headers.header2}`)
 
 	if (res.toString() !== testdata.toString()) {
-		console.log(a.getBuffer())
 		throw new Error(`${testdata} had a problem with data integrety`)
 	}
+	//final use after free with Generation this should never be possible
+	if (a.read(useAfterFreePtr) !== null) {
+		throw new Error(`Use after Free is Possible, this is a big Problem`)
+	}
+	console.log("CheckPtrAccess Done!")
 }
+
+
+
