@@ -3,12 +3,12 @@
   "version":"0.0.1",
   "private": false,
   "type": "module",
-  "main": "dist/cjs/arena.js",
-  "module": "dist/esm/arena.js",
+  "main": "dist/arena.js",
+  "module": "dist/arena.js",
   "types": "dist/arena.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "node ./dist/esm/arena.js && node ./dist/cjs/arena.js"
+    "test": "node ./dist/arena.js"
   },
   "devDependencies": {
     "@types/node": "^25.2.3"
