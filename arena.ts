@@ -165,7 +165,7 @@ export class Arena {
 	public translate(ptr: ArenaLocation) {
 		let start = Number(BigInt(ptr as bigint) >> 32n)
 		const generation = BigInt(this._view32[(start >> SHIFTOFFSETS.BYTE_32) + HEADERS.GENERATION_BYTE_0_32]!)
-		console.log({ start, generation })
+		return { start, generation }
 	}
 	public readWithHeaders(ptr: ArenaLocation): Uint8Array | null {
 		let start = Number(BigInt(ptr as bigint) >> 32n)
