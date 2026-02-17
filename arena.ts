@@ -19,12 +19,6 @@ export interface ArenaHeaders {
 	header1: number
 	header2: number
 }
-const enum SHIFTOFFSETS {
-	BYTE_8 = 0, // No SHIFT needed
-	BYTE_16 = 1,
-	BYTE_32 = 2,
-	BYTE_64 = 3,
-}
 const enum HEADERS {
 	TOTAL_LENGTH_0_32 = 0,
 	PAYLOAD_LENGTH_0_32 = 1,
@@ -66,6 +60,25 @@ export class Arena {
 		}
 		this._emptySpots = new Uint32Array(currentOffset)
 	}
+
+	private _u(n: number): number {
+		return n >>> 0;
+	}
+
+	private _idx32(byteOffset: number): number {
+		return (byteOffset >>> 0) >> 2;
+	}
+
+	private _makePtr(offset: number, gen: number | bigint): ArenaLocation {
+		const bOffset = BigInt(offset >>> 0);
+		const bGen = BigInt(gen ?? 0);
+		return ((bOffset << 32n) | (bGen & 0xFFFFFFFFn)) as ArenaLocation;
+	}
+
+	private _getOffset(ptr: ArenaLocation): number {
+		return Number(BigInt(ptr) >> 32n) >>> 0;
+	}
+
 	private _getBucketCount(bucketIdx: number): number {
 		return this._emptySpots[this._bucketOffsets[bucketIdx]!]!;
 	}
@@ -82,50 +95,63 @@ export class Arena {
 		this._emptySpots[this._bucketOffsets[bucketIdx]! + slotIdx + 1] = offset;
 	}
 
-	private _initBlock(start: number, dataLength: number, { header0, header1, header2 }: { header0?: number, header1?: number, header2?: number }) {
-		const h0 = (header0 || 0) & 0xFF;
-		const h1 = (header1 || 0) & 0xFF;
-		const h2 = (header2 || 0) & 0xFF;
-		const shift32 = start >> SHIFTOFFSETS.BYTE_32
-		this._view32[shift32 + HEADERS.TOTAL_LENGTH_0_32] = (dataLength + this.HEADER_SIZE_BYTES + this._allignMask) & ~this._allignMask
-		this._view32[shift32 + HEADERS.PAYLOAD_LENGTH_0_32] = dataLength
-		this._view32[shift32 + (HEADERS.DELETED_8 >> SHIFTOFFSETS.BYTE_32)] = (h2 << 24) | (h1 << 16) | (h0 << 8) | 0
+	private _initBlock(start: number, dataLength: number, headers: { header0: number, header1: number, header2: number }) {
+		const idx = this._idx32(start)
+		const { header0: h0, header1: h1, header2: h2 } = headers;
+
+		this._view32[idx + HEADERS.TOTAL_LENGTH_0_32] = this._u((dataLength + this.HEADER_SIZE_BYTES + this._allignMask) & ~this._allignMask);
+		this._view32[idx + HEADERS.PAYLOAD_LENGTH_0_32] = dataLength;
+
+		this._view32[idx + (HEADERS.DELETED_8 >> 2)] = ((h2 || 0) << 24) | ((h1 || 0) << 16) | ((h0 || 0) << 8);
+		this._view8[start + HEADERS.DELETED_8] = 0;
 	}
 
 	public alloc(data: Uint8Array, headers?: ArenaCustomHeaders): ArenaLocation {
-		if (headers == undefined) headers = { header0: 0, header1: 0, header2: 0 }
-		const totalBlockSize = (data.byteLength + this.HEADER_SIZE_BYTES + this._allignMask) & ~this._allignMask;
-		const bucketIdx = (totalBlockSize >> this._allignShift) - 1;
+		headers ||= { header0: 0, header1: 0, header2: 0 };
+
+		const needed = (data.byteLength + this.HEADER_SIZE_BYTES + this._allignMask) & ~this._allignMask;
+		const bucketIdx = (needed >> this._allignShift) - 1;
 		if (bucketIdx >= 0 && bucketIdx < this._bucketcount) {
 			const count = this._getBucketCount(bucketIdx);
 			if (count > 0) {
-				const recycledOffset = this._getBucketOffset(bucketIdx, count - 1);
+				const recycledOffset = this._u(this._getBucketOffset(bucketIdx, count - 1));
 				this._setBucketCount(bucketIdx, count - 1);
 				this._initBlock(recycledOffset, data.length, headers);
-				return (BigInt(recycledOffset) << 32n | BigInt(this._view32[(recycledOffset >> SHIFTOFFSETS.BYTE_32) + HEADERS.GENERATION_BYTE_0_32]!)) as ArenaLocation
+
+				const gen = this._view32[this._idx32(recycledOffset) + HEADERS.GENERATION_BYTE_0_32]!;
+				return this._makePtr(recycledOffset, gen)
 			}
 		}
-		const start = this._offset
-		this._checkForSpace(data.byteLength + this.HEADER_SIZE_BYTES) && this._resize()
-		this._initBlock(start, data.byteLength, headers || {})
+		const start = this._u(this._offset)
+		if (this._checkForSpace(needed)) this._resize()
+		this._initBlock(start, data.byteLength, headers)
+
 		this._view8.set(data, start + this.HEADER_SIZE_BYTES)
-		this._offset = (data.byteLength + this.HEADER_SIZE_BYTES + this._offset + this._allignMask) & ~this._allignMask;
-		return (BigInt(start) << 32n | BigInt(this._view32[(start >> SHIFTOFFSETS.BYTE_32) + HEADERS.GENERATION_BYTE_0_32]!)) as ArenaLocation
+		this._offset = this._u((start + needed) & ~this._allignMask);
+
+		const gen = this._view32[this._idx32(start) + HEADERS.GENERATION_BYTE_0_32]!
+		return this._makePtr(start, gen)
 	}
 	public read(location: ArenaLocation): Uint8Array | null {
-		let start = Number(BigInt(location as bigint) >> 32n)
-		const generation = BigInt(location as bigint) & 0xFFFFFFFFn
-		let length = this._view32[(start >> SHIFTOFFSETS.BYTE_32) + HEADERS.PAYLOAD_LENGTH_0_32]!
-		const diff = generation ^ BigInt(this._view32[((start >> SHIFTOFFSETS.BYTE_32) + HEADERS.GENERATION_BYTE_0_32)]!)
-		if (diff !== 0n) return null
-		return this._view8.subarray(start + this.HEADER_SIZE_BYTES, start + this.HEADER_SIZE_BYTES + Number(length))
+		const { start, generation } = this.translate(location);
+		const idx = this._idx32(start)
+		const currgen = BigInt(this._view32[idx + HEADERS.GENERATION_BYTE_0_32]!)
+
+		if (generation !== currgen) return null
+		if (this._view8[start + HEADERS.DELETED_8] === 1) return null
+
+		const dataLength = this._view32[idx + HEADERS.PAYLOAD_LENGTH_0_32]!;
+		return this._view8.subarray(start + this.HEADER_SIZE_BYTES, start + this.HEADER_SIZE_BYTES + dataLength);
 	}
 	public free(location: ArenaLocation): ArenaLocation {
-		let start = Number(BigInt(location as bigint) >> 32n)
-		const currgen = this._view32[(start >> SHIFTOFFSETS.BYTE_32) + HEADERS.GENERATION_BYTE_0_32]!
-		this._view32[(start >> SHIFTOFFSETS.BYTE_32) + HEADERS.GENERATION_BYTE_0_32] = currgen + 1 // this part can wrap around
-		this._view8[start + HEADERS.DELETED_8] = 1
-		const totalBlockSize = this._view32[(start >> SHIFTOFFSETS.BYTE_32) + HEADERS.TOTAL_LENGTH_0_32]!
+		const { start, generation: _ } = this.translate(location)
+		const idx = this._idx32(start)
+		const currgen = this._view32[idx + HEADERS.GENERATION_BYTE_0_32]!
+
+		this._view32[idx + HEADERS.GENERATION_BYTE_0_32] = currgen + 1
+		this._view8[this._u(start) + HEADERS.DELETED_8] = 1
+
+		const totalBlockSize = this._view32[this._idx32(start) + HEADERS.TOTAL_LENGTH_0_32]!
 		const bucketIdx = (totalBlockSize >> this._allignShift) - 1
 		if (bucketIdx >= 0 && bucketIdx < this._bucketcount) {
 			const count = this._getBucketCount(bucketIdx)
@@ -135,11 +161,11 @@ export class Arena {
 				this._setBucketCount(bucketIdx, count + 1);
 			}
 		}
-		return 0n as ArenaLocation
+		return this._makePtr(0, 0) as ArenaLocation
 	}
 
 	private _checkForSpace(size: number): boolean {
-		if (this._buffer.byteLength >= this._offset + size) return false
+		if (this._u(this._buffer.byteLength) >= (this._u(this._offset) + size)) return false
 		return true
 	}
 
@@ -149,45 +175,48 @@ export class Arena {
 		this._view8 = new Uint8Array(this._buffer)
 		this._view32 = new Uint32Array(this._buffer)
 	}
+
 	public size(): number {
 		return this._buffer.byteLength
 	}
+
 	public getBuffer(): Uint8Array {
-		return this._view8.subarray(0, this._offset)
+		return this._view8.subarray(0, this._u(this._offset))
 	}
 	public reserve(size: number): Uint8Array {
-		const start = this._offset
+		const start = this._u(this._offset)
 		this._checkForSpace(start + this.HEADER_SIZE_BYTES + size + this._allignMask & ~this._allignMask) && this._resize()
-		this._initBlock(start, size, {})
-		this._offset = this._offset + size + this.HEADER_SIZE_BYTES + this._allignMask & ~this._allignMask
+		this._initBlock(start, size, { header0: 0, header1: 0, header2: 0 })
+		this._offset = (this._offset + size + this.HEADER_SIZE_BYTES + this._allignMask & ~this._allignMask) >>> 0
 		return this._view8.subarray(start + this.HEADER_SIZE_BYTES, start + this.HEADER_SIZE_BYTES + size)
 	}
 	public translate(ptr: ArenaLocation) {
-		let start = Number(BigInt(ptr as bigint) >> 32n)
-		const generation = BigInt(this._view32[(start >> SHIFTOFFSETS.BYTE_32) + HEADERS.GENERATION_BYTE_0_32]!)
+		const start = this._getOffset(ptr)
+		const generation = ptr & 0xFFFFFFFFn;
 		return { start, generation }
 	}
 	public readWithHeaders(ptr: ArenaLocation): Uint8Array | null {
-		let start = Number(BigInt(ptr as bigint) >> 32n)
-		const generation = BigInt(ptr as bigint) & 0xFFFFFFFFn
-		let length = this._view32[(start >> SHIFTOFFSETS.BYTE_32) + HEADERS.PAYLOAD_LENGTH_0_32]!
-		const diff = generation ^ BigInt(this._view32[((start >> SHIFTOFFSETS.BYTE_32) + HEADERS.GENERATION_BYTE_0_32)]!)
-		if (diff !== 0n) return null
+		const { start, generation } = this.translate(ptr)
+		let idx32 = this._idx32(start)
+		let length = this._view32[idx32 + HEADERS.PAYLOAD_LENGTH_0_32]!
+		if (BigInt(this._view32[idx32 + HEADERS.GENERATION_BYTE_0_32]!) !== generation) return null
 		return this._view8.subarray(start + 12, start + this.HEADER_SIZE_BYTES + Number(length))
 	}
 	public label(): Array<ArenaLocation> {
 		const ptrArray = new Array<ArenaLocation>()
 		const limit = this._offset;
 		let pos = 0
-		while (pos < limit) {
-			const totalLength = this._view32[pos >> SHIFTOFFSETS.BYTE_32]!;
+		while (this._u(pos) < this._u(limit)) {
+			const totalLength = this._view32[this._idx32(pos)]!;
 			if (totalLength === 0) {
-				pos = (pos + 16) & ~15
+				pos = this._idx32((pos + 16) & ~15)
 				continue;
 			}
-			const isDeleted = this._view8[pos + HEADERS.DELETED_8] === 1
+			const isDeleted = this._view8[this._u(pos) + HEADERS.DELETED_8] === 1
 			if (!isDeleted) {
-				ptrArray.push(((BigInt(pos) << 32n) | BigInt(this._view32[(pos >> SHIFTOFFSETS.BYTE_32) + HEADERS.GENERATION_BYTE_0_32]!)) as ArenaLocation);
+				ptrArray.push(
+					this._makePtr(pos, this._view32[this._idx32(pos) + HEADERS.GENERATION_BYTE_0_32]!)
+				);
 			}
 			pos += totalLength
 			if (totalLength === 0) break;
@@ -195,14 +224,15 @@ export class Arena {
 		return ptrArray
 	}
 	public getHeaders(ptr: ArenaLocation): ArenaHeaders {
-		let start = Number(BigInt(ptr as bigint) >> 32n)
+		const { start, generation: _ } = this.translate(ptr)
+		const idx = this._u(start)
 		return {
-			totalLength: Number(this._view32[(start >> SHIFTOFFSETS.BYTE_32) + HEADERS.TOTAL_LENGTH_0_32]!.toString()),
-			payloadlength: Number(this._view32[(start >> SHIFTOFFSETS.BYTE_32) + HEADERS.PAYLOAD_LENGTH_0_32]!.toString()),
-			deleted: this._view8[start + HEADERS.DELETED_8] === 1,
-			header0: Number(this._view8[start + HEADERS.USER_STATUS_0_8]!.toString()),
-			header1: Number(this._view8[start + HEADERS.USER_STATUS_1_8]!.toString()),
-			header2: Number(this._view8[start + HEADERS.USER_STATUS_2_8]!.toString()),
+			totalLength: Number(this._view32[this._idx32(start) + HEADERS.TOTAL_LENGTH_0_32]!.toString()),
+			payloadlength: Number(this._view32[this._idx32(start) + HEADERS.PAYLOAD_LENGTH_0_32]!.toString()),
+			deleted: this._view8[idx + HEADERS.DELETED_8] === 1,
+			header0: Number(this._view8[idx + HEADERS.USER_STATUS_0_8]!.toString()),
+			header1: Number(this._view8[idx + HEADERS.USER_STATUS_1_8]!.toString()),
+			header2: Number(this._view8[idx + HEADERS.USER_STATUS_2_8]!.toString()),
 		}
 	}
 	public estimate(size: number, amnt: number): number {
