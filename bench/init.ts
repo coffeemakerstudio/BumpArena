@@ -1,5 +1,5 @@
 import { createWriteStream, createReadStream } from "node:fs";
-const testfile = "test.txt"
+const testfile = "test3.txt"
 function splitmix32(a: number) {
 	return function() {
 		a |= 0; a = a + 0x9e3779b9 | 0;
@@ -17,7 +17,7 @@ async function generateTestData(seed: number, count: number) {
 	const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 	for (let i = 0; i < count; i++) {
 		let str = '';
-		const len = Math.floor(random() * 150) + 50;
+		const len = Math.floor(random() * 5) + 10;
 		for (let j = 0; j < len; j++) {
 			str += characters.charAt(Math.floor(Math.random() * characters.length));
 		}

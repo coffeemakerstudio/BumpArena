@@ -165,7 +165,7 @@ export class Arena {
 	}
 
 	private _checkForSpace(size: number): boolean {
-		if (this._u(this._buffer.byteLength) >= (this._u(this._offset) + size)) return false
+		if (this._buffer.byteLength >= (this._offset + size)) return false
 		return true
 	}
 
@@ -238,7 +238,40 @@ export class Arena {
 	public estimate(size: number, amnt: number): number {
 		return (((size + this._allignMask) & ~this._allignMask) + this.HEADER_SIZE_BYTES) * amnt
 	}
+	public directAlloc(source: Uint8Array, startn: number, endn: number) {
+		const start = this._u(this._offset)
+		const len = endn - startn;
+		const needed = (len + this.HEADER_SIZE_BYTES + this._allignMask) & ~this._allignMask;
+		const bucketIdx = (needed >> this._allignShift) - 1;
+		if (bucketIdx >= 0 && bucketIdx < this._bucketcount) {
+			const count = this._getBucketCount(bucketIdx);
+			if (count > 0) {
+				const recycledOffset = this._u(this._getBucketOffset(bucketIdx, count - 1));
+				this._setBucketCount(bucketIdx, count - 1);
+				this._initBlock(recycledOffset, needed, { header0: 0, header1: 0, header2: 0 });
+				const gen = this._view32[this._idx32(recycledOffset) + HEADERS.GENERATION_BYTE_0_32]!;
+				this._view8.set(source.subarray(startn, endn), recycledOffset + this.HEADER_SIZE_BYTES)
+				return this._makePtr(recycledOffset, gen)
+			}
+		}
+		if (this._checkForSpace(needed)) this._resize()
+		this._initBlock(start, len, { header0: 0, header1: 0, header2: 0 });
+		this._offset = this._u((start + needed) & ~this._allignMask);
+		this._view8.set(source.subarray(startn, endn), start + this.HEADER_SIZE_BYTES)
+		const gen = this._view32[this._idx32(start) + HEADERS.GENERATION_BYTE_0_32]!
+		return this._makePtr(start, gen)
+
+		// if (this._checkForSpace(needed)) this._resize()
+		// this._initBlock(start, needed, { header0: 0, header1: 0, header2: 0 })
+		// this._view8.set(source.subarray(startn, endn), start + this.HEADER_SIZE_BYTES)
+		// this._offset = this._u((start + needed) & ~this._allignMask);
+		//
+		// const gen = this._view32[this._idx32(start) + HEADERS.GENERATION_BYTE_0_32]!
+		// return this._makePtr(start, gen)
+
+	}
+	public clear() {
+		this._offset = 0
+		this._emptySpots.fill(0)
+	}
 }
-
-
-

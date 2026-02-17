@@ -3,58 +3,73 @@ import { Arena } from "../arena";
 import { stream } from "./init.ts"
 
 
-const arena = new Arena({ initalSize: 1024 * 1024 * 1024 * 4 - 4 })
-let tmp: Uint8Array | null = null // Rest vom vorherigen Chunk
-const arenatransform = new WritableStream<Uint8Array>({
-	write(chunk) {
-		if (tmp) {
-			const combined = new Uint8Array(tmp.byteLength + chunk.byteLength)
-			combined.set(tmp, 0)
-			combined.set(chunk, tmp.byteLength)
-			chunk = combined
-			tmp = null
-		}
+let tmp: Uint8Array | null = null
+function getNewArenaTransform() {
+	return new WritableStream<Uint8Array>({
+		write(chunk) {
+			let sourceIdx = 0;
+			const chunkLen = chunk.byteLength;
 
-		let firstIdx = 0
-		let idx: number
-
-		while ((idx = chunk.indexOf(10, firstIdx)) !== -1) {
-			const lineLength = idx - firstIdx
-			if (lineLength > 0) {
-				// arena.alloc(chunk.subarray(firstIdx, idx))
-				const buf = arena.reserve(lineLength)
-				buf.set(chunk.subarray(firstIdx, idx))
+			if (tmp) {
+				const nextNewline = chunk.indexOf(10);
+				if (nextNewline !== -1) {
+					const totalLen = tmp.byteLength + nextNewline;
+					const target = new Uint8Array(totalLen)
+					target.set(tmp, 0);
+					target.set(chunk.subarray(0, nextNewline), tmp.byteLength);
+					arena.directAlloc(target, 0, target.length)
+					sourceIdx = nextNewline + 1;
+					tmp = null;
+				} else {
+					const newTmp = new Uint8Array(tmp.byteLength + chunkLen);
+					newTmp.set(tmp);
+					newTmp.set(chunk);
+					tmp = newTmp;
+					return;
+				}
 			}
-			firstIdx = idx + 1
-		}
 
-		if (firstIdx < chunk.byteLength) {
-			tmp = chunk.subarray(firstIdx)
+			// 2. Schnelle Schleife für den Rest des Chunks
+			while (true) {
+				const idx = chunk.indexOf(10, sourceIdx);
+				if (idx === -1) break;
+
+				const lineLength = idx - sourceIdx;
+				if (lineLength > 0) {
+					arena.directAlloc(chunk, 0, lineLength);
+				}
+				sourceIdx = idx + 1;
+			}
+
+			if (sourceIdx < chunkLen) {
+				tmp = chunk.slice(sourceIdx); // slice kopiert hier einmalig den Rest
+			}
+		},
+		close() {
+			if (tmp) {
+				arena.directAlloc(tmp, 0, tmp.length)
+				tmp = null
+			}
 		}
-	},
-	close() {
-		if (tmp) {
-			// arena.alloc(tmp)
-			const buf = arena.reserve(tmp.byteLength)
-			buf.set(tmp)
-			tmp = null
-		}
-	}
-});
+	})
+};
+const arena = new Arena();
 (async () => {
-	const reader = stream()
 	const start = performance.now()
+	for (let i = 0; i < 10; i++) {
+		tmp = null
+		const arenatransform = getNewArenaTransform()
+		const reader = stream()
 
-	await pipeline(
-		// stdin,
-		reader,
-		arenatransform
-	)
-	const ptr = arena.label()
+		await pipeline(
+			reader,
+			arenatransform
+		)
+		const _ptr = arena.label()
+		arena.clear()
+	}
 	const end = performance.now()
-	console.log(`count: ${ptr.length}`)
 	console.log(`${(end - start).toFixed(2)} ms`)
 	console.log(process.memoryUsage())
 	console.log(`arenasize: ${arena.size() / 1024} KB`)
-	// writeFileSync("arena.bin", arena.getBuffer())
 })();

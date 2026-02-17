@@ -1,3 +1,3 @@
 import { generateData } from "./init.ts"
 
-generateData(12345, 50_000_000)
+generateData(12345, 10_000_000)
