@@ -22,15 +22,31 @@ export function TestCheckPtrAccess(): boolean {
 
 	return true
 }
+
+export function TestCheckDirectPtrAccess(): boolean {
+	//Init
+	const a = new Arena()
+	const testdata = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7])
+
+	// free Slot reuse
+	const ptr = a.directAlloc(testdata, 0, testdata.length)
+	const res = a.read(ptr)
+	if (res == null) throw new Error(`${testdata} Could not read data`)
+	const resultheaders = a.getHeaders(ptr)
+
+	if (resultheaders.totalLength !== testdata.byteLength + 16) throw new Error(`totalLength not right: got: ${resultheaders.totalLength} needed: ${testdata.byteLength}`)
+	if (resultheaders.payloadlength !== testdata.byteLength) throw new Error(`payloadLength not right: got: ${resultheaders.payloadlength} needed: ${testdata.byteLength}`)
+	if (res.toString() !== testdata.toString()) throw new Error(`${testdata} had a problem with data integrety`)
+
+	return true
+}
 export function TestUseAfterFree(): boolean {
 	//Init
 	const a = new Arena()
 	const testdata = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7])
 
-	// USE-AFTER-FREE init
 	const useAfterFreePtr = a.alloc(testdata)
 	a.free(useAfterFreePtr)
-	//final use after free with Generation this should never be possible
 	if (a.read(useAfterFreePtr) !== null) throw new Error(`Use after Free is Possible, this is a big Problem`)
 
 	return true

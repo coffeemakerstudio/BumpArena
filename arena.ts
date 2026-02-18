@@ -116,7 +116,7 @@ export class Arena {
 			if (count > 0) {
 				const recycledOffset = this._u(this._getBucketOffset(bucketIdx, count - 1));
 				this._setBucketCount(bucketIdx, count - 1);
-				this._initBlock(recycledOffset, data.length, headers);
+				this._initBlock(recycledOffset, data.byteLength, headers);
 
 				const gen = this._view32[this._idx32(recycledOffset) + HEADERS.GENERATION_BYTE_0_32]!;
 				return this._makePtr(recycledOffset, gen)
@@ -171,7 +171,12 @@ export class Arena {
 
 	private _resize() {
 		//@ts-ignore
-		this._buffer = this._buffer.transfer(this._buffer.byteLength * 2)
+		if (this._buffer.transfer) this._buffer = this._buffer.transfer(this._buffer.byteLength * 2)
+		else {
+			const newBuffer = new ArrayBuffer(this._buffer.byteLength * 2);
+			new Uint8Array(newBuffer).set(this._view8);
+			this._buffer = newBuffer;
+		}
 		this._view8 = new Uint8Array(this._buffer)
 		this._view32 = new Uint32Array(this._buffer)
 	}
@@ -185,16 +190,18 @@ export class Arena {
 	}
 	public reserve(size: number): Uint8Array {
 		const start = this._u(this._offset)
-		this._checkForSpace(start + this.HEADER_SIZE_BYTES + size + this._allignMask & ~this._allignMask) && this._resize()
+		this._checkForSpace((this.HEADER_SIZE_BYTES + size + this._allignMask) & ~this._allignMask) && this._resize()
 		this._initBlock(start, size, { header0: 0, header1: 0, header2: 0 })
-		this._offset = (this._offset + size + this.HEADER_SIZE_BYTES + this._allignMask & ~this._allignMask) >>> 0
+		this._offset = ((this._offset + size + this.HEADER_SIZE_BYTES + this._allignMask) & ~this._allignMask) >>> 0
 		return this._view8.subarray(start + this.HEADER_SIZE_BYTES, start + this.HEADER_SIZE_BYTES + size)
 	}
+
 	public translate(ptr: ArenaLocation) {
 		const start = this._getOffset(ptr)
 		const generation = ptr & 0xFFFFFFFFn;
 		return { start, generation }
 	}
+
 	public readWithHeaders(ptr: ArenaLocation): Uint8Array | null {
 		const { start, generation } = this.translate(ptr)
 		let idx32 = this._idx32(start)
@@ -238,7 +245,7 @@ export class Arena {
 	public estimate(size: number, amnt: number): number {
 		return (((size + this._allignMask) & ~this._allignMask) + this.HEADER_SIZE_BYTES) * amnt
 	}
-	public directAlloc(source: Uint8Array, startn: number, endn: number) {
+	public directAlloc(source: Uint8Array, startn: number, endn: number): ArenaLocation {
 		const start = this._u(this._offset)
 		const len = endn - startn;
 		const needed = (len + this.HEADER_SIZE_BYTES + this._allignMask) & ~this._allignMask;
@@ -248,7 +255,7 @@ export class Arena {
 			if (count > 0) {
 				const recycledOffset = this._u(this._getBucketOffset(bucketIdx, count - 1));
 				this._setBucketCount(bucketIdx, count - 1);
-				this._initBlock(recycledOffset, needed, { header0: 0, header1: 0, header2: 0 });
+				this._initBlock(recycledOffset, len, { header0: 0, header1: 0, header2: 0 });
 				const gen = this._view32[this._idx32(recycledOffset) + HEADERS.GENERATION_BYTE_0_32]!;
 				this._view8.set(source.subarray(startn, endn), recycledOffset + this.HEADER_SIZE_BYTES)
 				return this._makePtr(recycledOffset, gen)
@@ -260,16 +267,8 @@ export class Arena {
 		this._view8.set(source.subarray(startn, endn), start + this.HEADER_SIZE_BYTES)
 		const gen = this._view32[this._idx32(start) + HEADERS.GENERATION_BYTE_0_32]!
 		return this._makePtr(start, gen)
-
-		// if (this._checkForSpace(needed)) this._resize()
-		// this._initBlock(start, needed, { header0: 0, header1: 0, header2: 0 })
-		// this._view8.set(source.subarray(startn, endn), start + this.HEADER_SIZE_BYTES)
-		// this._offset = this._u((start + needed) & ~this._allignMask);
-		//
-		// const gen = this._view32[this._idx32(start) + HEADERS.GENERATION_BYTE_0_32]!
-		// return this._makePtr(start, gen)
-
 	}
+
 	public clear() {
 		this._offset = 0
 		this._emptySpots.fill(0)
