@@ -28,10 +28,10 @@ export function TestCheckReserve(): boolean {
 
 	const seen = new Set<number>();
 	for (let i = 0; i < ptrs.length; i++) {
-		const buf = a.read(ptrs[i]);
+		const buf = a.read(ptrs[i]!);
 		if (!buf) throw new Error(`Reservation failed at item ${i}`);
 
-		const { start } = a.translate(ptrs[i]);
+		const { start } = a.translate(ptrs[i]!);
 
 		if (seen.has(start)) throw new Error(`Overlap detected at item ${i}`);
 		seen.add(start);
@@ -41,9 +41,9 @@ export function TestCheckReserve(): boolean {
 		if ((start & alignMask) !== 0) throw new Error(`Alignment error at item ${i}`);
 
 		const expected = testdata[i];
-		if (buf.length !== expected.length) throw new Error(`Payload length mismatch at item ${i}`);
+		if (buf.length !== expected!.length) throw new Error(`Payload length mismatch at item ${i}`);
 		for (let j = 0; j < buf.length; j++) {
-			if (buf[j] !== expected[j]) throw new Error(`Data mismatch at item ${i}:${j}`);
+			if (buf[j] !== expected![j]) throw new Error(`Data mismatch at item ${i}:${j}`);
 		}
 	}
 

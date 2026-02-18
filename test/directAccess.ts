@@ -16,11 +16,11 @@ export function TestDirectAlloc(): boolean {
 	if (ptrs.length !== count) throw new Error(`Allocated wrong amount of items!: needed: ${count}, got: ${ptrs.length}`)
 
 	for (let i = 0; i < ptrs.length; i++) {
-		const buf = a.read(ptrs[i])
+		const buf = a.read(ptrs[i]!)
 		if (!buf) throw new Error(`data at index ${i} is Empty.`)
 
 		for (let j = 0; j < testdata.length; j++) {
-			if (buf[j] !== testdata[i][j]) throw new Error(`dataset ${i} at ${j} is broken!`)
+			if (buf[j] !== testdata[i]![j]) throw new Error(`dataset ${i} at ${j} is broken!`)
 		}
 	}
 	return true

@@ -1,8 +1,8 @@
 import { describe, test } from "node:test"
 import { equal } from "node:assert"
-import { TestCheckDirectPtrAccess, TestCheckPtrAccess, TestUseAfterFree } from "./ptrs.ts"
-import { TestCheckReserve } from "./reserve.ts"
-import { TestDirectAlloc } from "./directAccess.ts"
+import { TestCheckDirectPtrAccess, TestCheckPtrAccess, TestUseAfterFree } from "./ptrs"
+import { TestCheckReserve } from "./reserve"
+import { TestDirectAlloc } from "./directAccess"
 
 describe("Arena Checks", () => {
 	test("Pointer Access", () => equal(TestCheckPtrAccess(), true, "Data corruption is possible!"))
