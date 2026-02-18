@@ -1,74 +1,90 @@
-## High-Speed: Linear Bulk Import
+# BumpArena
 
-Use `reserve()` for high-volume, linear data ingestion. To guarantee maximum throughput and deterministic behavior, `reserve()` **always appends** memory at the end of the arena buffer. No compaction, no relocation, no surprises.
+**4x faster than standard arrays and uses only ~40% of the RAM!** 🚀💾
 
-This makes it ideal for tight loops, streaming parsers, and bulk loaders where predictable memory behavior is critical.
-
----
-
-### Allocation Strategies
-
-#### Performance & GC Efficiency
-
-This Arena is explicitly designed to bypass the typical performance pitfalls of the V8 runtime:
-
-**GC Invisibility**  
-The entire arena is backed by a single `ArrayBuffer`. Since the Garbage Collector does not traverse raw buffer contents, this completely avoids costly mark-and-sweep scans over arena memory.
-
-**Zero Object Churn**  
-Data insertion does not allocate JavaScript objects. All writes are performed directly against the buffer. The engine reuses the same execution paths without producing heap garbage.
-
-**Deferred Management Overhead**  
-Logical pointers (`ArenaLocation`, implemented as `BigInt`) are created *only* when `label()` is invoked. This keeps pointer bookkeeping out of performance-critical hot paths.
+BumpArena is a high-performance memory arena for JavaScript and TypeScript. It provides contiguous memory allocation, fast pointer-based access, and minimal garbage collection overhead, making it ideal for handling large datasets efficiently.
 
 ---
 
-### Technical Architecture
+## Features
 
-#### Memory Layout (16-Byte Header)
-
-Each allocation block is prefixed with a fixed-size metadata header:
-
-- Size  
-- Generation ID  
-- Flags / reserved space  
-
-`reserve()` eagerly initializes these headers to ensure full compatibility with `read()` and `label()` without requiring additional bookkeeping passes.
-
-This guarantees **O(1)** access and validation at read time.
+- Contiguous memory buffer for fast allocations
+- Pointer-based access with generation tracking
+- Recycled buckets for efficient memory reuse
+- Compact memory footprint
+- Compatible with TypeScript and JavaScript
 
 ---
 
-#### Pointer Security & Validation
+## Installation
 
-An `ArenaLocation` is encoded as a **64-bit BigInt**:
+```bash
+npm install bumparena
+```
 
-- **High 32 bits** → Physical byte offset inside the arena  
-- **Low 32 bits** → Generation ID  
+or using Yarn:
 
-When `read()` is called, the arena validates the pointer by comparing its generation ID with the one stored in the block header:
-
-- ✅ Match → valid, data is returned  
-- ❌ Mismatch → block was freed or recycled → `null` is returned  
-
-This provides **use-after-free protection** without reference tracking, weak maps, or GC involvement.
+```bash
+yarn add bumparena
+```
 
 ---
 
-### 📖 Documentation & Tests
+## Quick Start
 
-The integrated test suite doubles as a **reference implementation**.  
-See the `// --- SHOWCASE & TESTS ---` section at the end of the source file for:
+```ts
+import { Arena } from "bumparena";
 
-- Stress tests for dynamic resizing  
-- Validation of pointer expiration semantics  
-- Advanced bucket reuse and fragmentation behavior  
-- Edge cases around generation rollover  
+// Create a new arena with default settings
+const arena = new Arena();
 
-To run the showcase directly, execute the file with Node.js. No external dependencies required.
+// Allocate some data
+const data = new Uint8Array([1, 2, 3, 4, 5]);
+const ptr = arena.alloc(data);
+
+// Read the data back
+const readData = arena.read(ptr);
+console.log(readData); // Uint8Array [1,2,3,4,5]
+
+// Free the allocation
+arena.free(ptr);
+
+// Reserve a block for manual writes
+const reserved = arena.reserve(10);
+reserved.set(new Uint8Array([10, 20, 30]));
+console.log(reserved);
+```
 
 ---
 
-### ⚖️ License
+## Advanced Usage
 
-MIT License — use freely in commercial and non-commercial projects.
+- Direct allocation from existing buffers with `directAlloc()`
+- Custom headers for allocations (`header0`, `header1`, `header2`)
+- Iterate all allocations using `label()`
+- Estimate memory usage with `estimate(size, amount)`
+
+---
+
+## Benchmarks
+
+| Implementation | Time | Heap Used | Notes |
+|-----------------------|------------|-----------|------------|
+| BumpArena (Optimized) | 183,098 ms | 4.82 GB | 50M items |
+| Standard Array | 765,961 ms | 11.22 GB | 50M items |
+
+> ~4x faster and uses ~40% of the RAM compared to standard JavaScript arrays
+
+---
+
+## Compatibility
+
+- Node.js ✅
+- Bun ✅
+- Browser (via compiled JS) ✅
+
+---
+
+## License
+
+MIT © eugen252009
