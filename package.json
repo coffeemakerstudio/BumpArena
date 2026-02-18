@@ -1,6 +1,6 @@
 {
   "name": "bumparena",
-  "version":"0.0.6",
+  "version":"0.0.7",
   "private": false,
   "type": "module",
   "main": "dist/arena.js",
@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc",
     "test": "node ./dist/test/test.test.js",
-    "publish": "tsc; npm publish"
+    "push": "bun test && tsc && npm pub"
   },
  "repository": {
     "type": "git",
