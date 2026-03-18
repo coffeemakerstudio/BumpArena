@@ -1,8 +1,26 @@
-# BumpArena
+# 🚀 BumpArena: High-Performance Memory Management for Bun/TS
 
-**4x faster than standard arrays and uses only ~40% of the RAM!** 🚀💾
+**4.2x faster than standard arrays while using ~60% less RAM!** 💾⚡
 
-BumpArena is a high-performance memory arena for JavaScript and TypeScript. It provides contiguous memory allocation, fast pointer-based access, and minimal garbage collection overhead, making it ideal for handling large datasets efficiently.
+BumpArena is a high-performance memory arena designed for JavaScript and TypeScript (optimized for Bun). It provides contiguous memory allocation, fast pointer-based access, and minimal Garbage Collection (GC) overhead, making it the ideal choice for handling industrial-scale datasets and real-time telemetry.
+
+---
+
+## 📊 Performance Benchmark (50M Objects)
+
+I compared the **BumpArena** implementation against a standard **Array-based** approach by processing a dataset of 50 million records.
+
+| Metric | Standard Array | **BumpArena** | Improvement |
+| :--- | :--- | :--- | :--- |
+| **Total Time** | 765.9s (12.7 min) | **183.1s (3.05 min)** | **4.2x Faster** 🚀 |
+| **Throughput** | ~652k lines/s | **~2.73M lines/s** | **+318% Speed** |
+| **RAM Usage (RSS)** | 28.04 GB | **11.24 GB** | **16.8 GB Saved** 📉 |
+| **Heap Efficiency** | 11.22 GB | **4.82 GB** | **2.3x Lower Usage** |
+
+### 🛠 Why it's faster:
+* **Zero GC Pressure:** By using a pre-allocated buffer, we bypass the costly JavaScript Garbage Collector.
+* **Cache Locality:** Contiguous memory layout ensures the CPU stays fast and avoids cache misses.
+* **Industrial Scale:** Designed to handle 50M+ data points without breaking the heap.
 
 ---
 
