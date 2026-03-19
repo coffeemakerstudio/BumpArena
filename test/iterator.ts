@@ -1,5 +1,5 @@
-import { Arena } from "../arena";
-import { ArenaLocation } from "../interface";
+import { Arena } from "../arena.ts";
+import { ArenaLocation } from "../interface.ts";
 
 export function TestIteratorAccess(): boolean {
 	const count = 1_000;
