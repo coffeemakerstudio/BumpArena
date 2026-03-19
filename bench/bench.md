@@ -2,7 +2,7 @@
 
 ## bun arena.ts;
 183098.55 ms
-```json
+```js
 {
   rss: 11240919040,
   heapTotal: 8595075072,
@@ -18,7 +18,7 @@ arenasize: 2097152 KB
 ## bun array.ts
 765961.27 ms
 Count: 50000000
-```json
+```js
 {
   rss: 28036014080,
   heapTotal: 9476152320,
