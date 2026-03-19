@@ -24,7 +24,7 @@ export class Arena implements IStorageStrategy {
 	private _next: number = 0;
 
 	constructor(options?: ArenaOptions) {
-		this._buffer = new ArrayBuffer(options?.initalSize || 64 * 1024)
+		this._buffer = new ArrayBuffer(options?.initialSize || 64 * 1024)
 		this._view8 = new Uint8Array(this._buffer);
 		this._view32 = new Uint32Array(this._buffer)
 		this._offset = 0;

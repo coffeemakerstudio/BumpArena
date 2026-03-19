@@ -60,7 +60,7 @@ import { Arena } from "bumparena";
 import fs from "node:fs";
 
 // 1. Initialize (e.g., 1GB Arena)
-const arena = new Arena({ initalSize: 1024 * 1024 * 1024 });
+const arena = new Arena({ initialSize: 1024 * 1024 * 1024 });
 
 // 2. Map data instantly (Zero-Copy)
 const data = new Uint8Array([10, 20, 30, 40]);
@@ -76,7 +76,7 @@ fs.writeFileSync("database.bin", arena.getBuffer());
 // 5. Reload (Zero Parsing Time)
 // Simply load the bytes back into a new Arena buffer
 const savedData = fs.readFileSync("database.bin");
-const restoredArena = new Arena({ initalSize: savedData.byteLength });
+const restoredArena = new Arena({ initialSize: savedData.byteLength });
 restoredArena.putBytes(savedData); // Structure is restored instantly
 
 //Clear your Arena, if you want a restart

@@ -1,6 +1,6 @@
 export type ArenaLocation = bigint & { readonly __data_pointer: unique symbol };
 export interface ArenaOptions {
-	initalSize?: number
+	initialSize?: number
 	littleEndian?: boolean
 	allignment?: 8 | 16 | 32 | 64
 	bucketOffsets?: number[];
