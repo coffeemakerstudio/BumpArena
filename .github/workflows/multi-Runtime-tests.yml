@@ -1,0 +1,53 @@
+name: Multi-Runtime Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Hier definieren wir die Runtimes
+        runtime: [node, deno, bun]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Setup für Node.js
+      - name: Setup Node.js
+        if: matrix.runtime == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      # Setup für Deno
+      - name: Setup Deno
+        if: matrix.runtime == 'deno'
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      # Setup für Bun
+      - name: Setup Bun
+        if: matrix.runtime == 'bun'
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      # Abhängigkeiten installieren (nur für Node/Bun nötig, Deno macht das on-the-fly)
+      - name: Install Dependencies
+        if: matrix.runtime != 'deno'
+        run: |
+          if [ "${{ matrix.runtime }}" = "node" ]; then npm install; fi
+          if [ "${{ matrix.runtime }}" = "bun" ]; then bun install; fi
+
+      # Tests ausführen
+      - name: Run Tests
+        run: |
+          if [ "${{ matrix.runtime }}" = "node" ]; then npm test; fi
+          if [ "${{ matrix.runtime }}" = "deno" ]; then deno test --allow-all; fi
+          if [ "${{ matrix.runtime }}" = "bun" ]; then bun test; fi
