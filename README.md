@@ -91,7 +91,10 @@ arena.clear()
 - Estimate memory usage with `estimate(size, amount)`
 
 ---
+
 ## Header
+
+To ensure cross-language compatibility, the Arena uses a packed binary header. This allows C/C++, Rust, or Zig to map the memory-dump directly without translation.
 
 ```c 
 typedef struct __attribute__((packed)) {
@@ -102,7 +105,9 @@ typedef struct __attribute__((packed)) {
   uint8_t user_header0;
   uint8_t user_header1;
   uint8_t user_header2;
-} ArenaData;```
+} ArenaData;
+
+```
 
 ---
 
