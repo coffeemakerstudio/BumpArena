@@ -1,6 +1,6 @@
 import { pipeline } from "node:stream/promises";
 import { Arena } from "../arena";
-import { stream } from "./init.ts"
+import { noopWriter, stream } from "./init.ts"
 
 
 let tmp: Uint8Array | null = null
@@ -29,7 +29,6 @@ function getNewArenaTransform() {
 				}
 			}
 
-			// 2. Schnelle Schleife für den Rest des Chunks
 			while (true) {
 				const idx = chunk.indexOf(10, sourceIdx);
 				if (idx === -1) break;
@@ -42,7 +41,7 @@ function getNewArenaTransform() {
 			}
 
 			if (sourceIdx < chunkLen) {
-				tmp = chunk.slice(sourceIdx); // slice kopiert hier einmalig den Rest
+				tmp = chunk.slice(sourceIdx);
 			}
 		},
 		close() {
@@ -65,8 +64,11 @@ const arena = new Arena();
 			reader,
 			arenatransform
 		)
-		const _ptr = arena.label()
-		arena.clear()
+		// const decode = new TextDecoder()
+		// for (const itemptr of arena.records()) {
+		// 	noopWriter(decode.decode(itemptr[0]))
+		// }
+		// arena.clear()
 	}
 	const end = performance.now()
 	console.log(`${(end - start).toFixed(2)} ms`)

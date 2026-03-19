@@ -1,25 +1,6 @@
-export type ArenaLocation = bigint & { readonly __data_pointer: unique symbol };
-export interface ArenaOptions {
-	initalSize?: number
-	littleEndian?: boolean
-	allignment?: 8 | 16 | 32 | 64
-	bucketOffsets?: number[];
-	bucketCapacities?: number[];
-}
-export interface ArenaCustomHeaders {
-	header0: number,
-	header1: number,
-	header2: number
-}
-export interface ArenaHeaders {
-	totalLength: number
-	payloadlength: number
-	deleted: boolean
-	header0: number
-	header1: number
-	header2: number
-}
-const enum HEADERS {
+import { type ArenaCustomHeaders, type ArenaHeaders, type ArenaLocation, type ArenaOptions, type IStorageStrategy } from "./interface.d.js"
+
+export const  enum HEADERS {
 	TOTAL_LENGTH_0_32 = 0,
 	PAYLOAD_LENGTH_0_32 = 1,
 	GENERATION_BYTE_0_32 = 2,
@@ -28,10 +9,9 @@ const enum HEADERS {
 	USER_STATUS_1_8 = 14,
 	USER_STATUS_2_8 = 15,
 }
-
-export class Arena {
+export class Arena implements IStorageStrategy {
 	private HEADER_SIZE_BYTES = 16
-	private _buffer: ArrayBuffer
+	private _buffer: ArrayBufferLike
 	private _view8: Uint8Array
 	private _view32: Uint32Array
 	private _offset: number
@@ -41,6 +21,7 @@ export class Arena {
 	private _bucketOffsets: number[];
 	private _bucketCapacities: number[];
 	private _bucketcount: number;
+	private _next: number = 0;
 
 	constructor(options?: ArenaOptions) {
 		this._buffer = new ArrayBuffer(options?.initalSize || 64 * 1024)
@@ -59,6 +40,12 @@ export class Arena {
 			currentOffset += (cap + 1)
 		}
 		this._emptySpots = new Uint32Array(currentOffset)
+	}
+	public import(buf: ArrayBufferLike) {
+		this._buffer = buf;
+		this._offset = buf.byteLength
+		this._view8 = new Uint8Array(buf)
+		this._view32 = new Uint32Array(buf)
 	}
 
 	private _u(n: number): number {
@@ -209,7 +196,7 @@ export class Arena {
 		if (BigInt(this._view32[idx32 + HEADERS.GENERATION_BYTE_0_32]!) !== generation) return null
 		return this._view8.subarray(start + 12, start + this.HEADER_SIZE_BYTES + Number(length))
 	}
-	public label(): Array<ArenaLocation> {
+	public collectActiveRecords(): Array<ArenaLocation> {
 		const ptrArray = new Array<ArenaLocation>()
 		const limit = this._offset;
 		let pos = 0
@@ -272,5 +259,33 @@ export class Arena {
 	public clear() {
 		this._offset = 0
 		this._emptySpots.fill(0)
+	}
+
+	public *records(): Generator<[Uint8Array, ArenaLocation]> {
+		while (this._next < this._offset) {
+			const start = this._next
+			const totalLength = this._view32[this._idx32(start) + HEADERS.TOTAL_LENGTH_0_32]!
+			const payloadLength = this._view32[this._idx32(start) + HEADERS.PAYLOAD_LENGTH_0_32]!
+
+			if (totalLength === 0) {
+				this._next = (start + 16) & ~15
+				continue
+			}
+
+			const isDeleted = this._view8[start + HEADERS.DELETED_8] === 1
+			const ptr = this._makePtr(start, this._view32[this._idx32(start) + HEADERS.GENERATION_BYTE_0_32]!)
+
+			this._next += totalLength
+
+			if (!isDeleted) {
+				yield [
+					this._view8.subarray(start + this.HEADER_SIZE_BYTES, start + this.HEADER_SIZE_BYTES + payloadLength),
+					ptr
+				]
+			}
+		}
+	}
+	public reset() {
+		this._next = 0
 	}
 }

@@ -34,25 +34,30 @@ yarn add bumparena
 
 ```ts
 import { Arena } from "bumparena";
+import fs from "node:fs";
 
-// Create a new arena with default settings
-const arena = new Arena();
+// 1. Initialize (e.g., 1GB Arena)
+const arena = new Arena({ initalSize: 1024 * 1024 * 1024 });
 
-// Allocate some data
-const data = new Uint8Array([1, 2, 3, 4, 5]);
-const ptr = arena.alloc(data);
+// 2. Map data instantly (Zero-Copy)
+const data = new Uint8Array([10, 20, 30, 40]);
+const ptr = arena.alloc(data); 
 
-// Read the data back
-const readData = arena.read(ptr);
-console.log(readData); // Uint8Array [1,2,3,4,5]
+// 3. Retrieve (O(1) access)
+const view = arena.read(ptr);
 
-// Free the allocation
-arena.free(ptr);
+// 4. Persistence "From Nothing"
+// Save the entire memory state 1:1 as a binary image
+fs.writeFileSync("database.bin", arena.getBuffer());
 
-// Reserve a block for manual writes
-const reserved = arena.reserve(10);
-reserved.set(new Uint8Array([10, 20, 30]));
-console.log(reserved);
+// 5. Reload (Zero Parsing Time)
+// Simply load the bytes back into a new Arena buffer
+const savedData = fs.readFileSync("database.bin");
+const restoredArena = new Arena({ initalSize: savedData.byteLength });
+restoredArena.putBytes(savedData); // Structure is restored instantly
+
+//Clear your Arena, if you want a restart
+arena.clear()
 ```
 
 ---
@@ -63,6 +68,20 @@ console.log(reserved);
 - Custom headers for allocations (`header0`, `header1`, `header2`)
 - Iterate all allocations using `label()`
 - Estimate memory usage with `estimate(size, amount)`
+
+---
+## Header
+
+```c 
+typedef struct __attribute__((packed)) {
+  uint32_t total_length;
+  uint32_t payload_length;
+  uint32_t generation;
+  uint8_t deleted;
+  uint8_t user_header0;
+  uint8_t user_header1;
+  uint8_t user_header2;
+} ArenaData;```
 
 ---
 

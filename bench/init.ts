@@ -1,5 +1,5 @@
 import { createWriteStream, createReadStream } from "node:fs";
-const testfile = "test3.txt"
+const testfile = "./bigtest.txt"
 function splitmix32(a: number) {
 	return function() {
 		a |= 0; a = a + 0x9e3779b9 | 0;

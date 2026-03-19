@@ -51,3 +51,4 @@ export function TestUseAfterFree(): boolean {
 
 	return true
 }
+

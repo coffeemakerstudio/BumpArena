@@ -3,7 +3,7 @@ import { noopWriter, stream } from "./init.ts"
 
 const array: Array<string> = [];
 const decode = new TextDecoder()
-let tmp: Uint8Array | null = null // Rest vom vorherigen Chunk
+let tmp: Uint8Array | null = null 
 function getNewArrayTransformStream() {
 	return new WritableStream<Uint8Array>({
 		write(chunk) {
