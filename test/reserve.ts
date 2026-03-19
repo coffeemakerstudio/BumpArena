@@ -22,7 +22,7 @@ export function TestCheckReserve(): boolean {
 		offsets.push((a.getBuffer().subarray(0, buf.byteLength)).byteOffset);
 	}
 
-	const ptrs = a.label();
+	const ptrs = a.collectActiveRecords();
 
 	if (ptrs.length !== count) throw new Error(`Label count mismatch: ${ptrs.length} != ${count}`);
 
@@ -31,7 +31,7 @@ export function TestCheckReserve(): boolean {
 		const buf = a.read(ptrs[i]!);
 		if (!buf) throw new Error(`Reservation failed at item ${i}`);
 
-		const { start } = a.translate(ptrs[i]!);
+		const { offset: start } = a.inspect(ptrs[i]!);
 
 		if (seen.has(start)) throw new Error(`Overlap detected at item ${i}`);
 		seen.add(start);

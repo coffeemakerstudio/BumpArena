@@ -14,7 +14,7 @@ export function TestCheckPtrAccess(): boolean {
 	const resultheaders = a.getHeaders(ptr)
 
 	if (resultheaders.totalLength !== testdata.byteLength + 16) throw new Error(`totalLength not right: got: ${resultheaders.totalLength} needed: ${testdata.byteLength}`)
-	if (resultheaders.payloadlength !== testdata.byteLength) throw new Error(`payloadLength not right: got: ${resultheaders.payloadlength} needed: ${testdata.byteLength}`)
+	if (resultheaders.payloadLength !== testdata.byteLength) throw new Error(`payloadLength not right: got: ${resultheaders.payloadLength} needed: ${testdata.byteLength}`)
 	if (resultheaders.header0 !== headers.header0) throw new Error(`header0: got: ${resultheaders.header0} needed: ${headers.header0}`)
 	if (resultheaders.header1 !== headers.header1) throw new Error(`header1: got: ${resultheaders.header1} needed: ${headers.header1}`)
 	if (resultheaders.header2 !== headers.header2) throw new Error(`header2: got: ${resultheaders.header2} needed: ${headers.header2}`)
@@ -35,7 +35,7 @@ export function TestCheckDirectPtrAccess(): boolean {
 	const resultheaders = a.getHeaders(ptr)
 
 	if (resultheaders.totalLength !== testdata.byteLength + 16) throw new Error(`totalLength not right: got: ${resultheaders.totalLength} needed: ${testdata.byteLength}`)
-	if (resultheaders.payloadlength !== testdata.byteLength) throw new Error(`payloadLength not right: got: ${resultheaders.payloadlength} needed: ${testdata.byteLength}`)
+	if (resultheaders.payloadLength !== testdata.byteLength) throw new Error(`payloadLength not right: got: ${resultheaders.payloadLength} needed: ${testdata.byteLength}`)
 	if (res.toString() !== testdata.toString()) throw new Error(`${testdata} had a problem with data integrety`)
 
 	return true

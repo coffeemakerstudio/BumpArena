@@ -11,9 +11,22 @@ export interface ArenaCustomHeaders {
 	header1: number,
 	header2: number
 }
+export interface InspectStruct {
+	offset: number;
+	generation_ptr: number;
+	generation: number;
+	isSafe: boolean;
+	totalLength: number;
+	payloadLength: number;
+	isDeleted: boolean;
+	UserMetaData0: number;
+	UserMetaData1: number;
+	UserMetaData2: number;
+	payload?: Uint8Array;
+}
 export interface ArenaHeaders {
 	totalLength: number
-	payloadlength: number
+	payloadLength: number
 	deleted: boolean
 	header0: number
 	header1: number

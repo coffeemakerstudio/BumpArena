@@ -1,4 +1,5 @@
 import { Arena } from "../arena";
+import { ArenaLocation } from "../interface";
 
 export function TestIteratorAccess(): boolean {
 	const count = 1_000;
@@ -18,15 +19,14 @@ export function TestIteratorAccess(): boolean {
 		offsets.push((a.getBuffer().subarray(0, buf.byteLength)).byteOffset);
 	}
 	let i = 0;
-	for (let buf: Uint8Array | undefined; buf = a.next(); i++) {
-		if (!buf) throw new Error(`No Item at index ${i}`);
-
+	for (const iter of a.records()) {
+		if (!iter[0]) throw new Error(`No Item at index ${i}`);
 		const expected = testdata[i];
-		if (buf.length !== expected!.length) throw new Error(`Payload length mismatch at item: ${i} got: ${buf.length} needed: ${expected.length}`);
-		for (let j = 0; j < buf.length; j++) {
-			if (buf[j] !== expected![j]) throw new Error(`Data mismatch at item ${i}:${j}`);
+		if (iter[0].length !== expected!.length) throw new Error(`Payload length mismatch at item: ${i} got: ${iter[0].length} needed: ${expected.length}`);
+		for (let j = 0; j < iter[0].length; j++) {
+			if (iter[0][j] !== expected![j]) throw new Error(`Data mismatch at item ${i}:${j}`);
 		}
-
+		i += 1;
 	}
 	return true;
 }

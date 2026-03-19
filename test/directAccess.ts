@@ -12,7 +12,7 @@ export function TestDirectAlloc(): boolean {
 		a.directAlloc(data, 0, data.length)
 	}
 
-	const ptrs = a.label()
+	const ptrs = a.collectActiveRecords()
 	if (ptrs.length !== count) throw new Error(`Allocated wrong amount of items!: needed: ${count}, got: ${ptrs.length}`)
 
 	for (let i = 0; i < ptrs.length; i++) {

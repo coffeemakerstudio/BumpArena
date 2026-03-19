@@ -1,4 +1,4 @@
-import { type ArenaCustomHeaders, type ArenaHeaders, type ArenaLocation, type ArenaOptions, type IStorageStrategy } from "./interface.d.js"
+import { type ArenaCustomHeaders, type ArenaHeaders, type ArenaLocation, type ArenaOptions, type InspectStruct, type IStorageStrategy } from "./interface.d.js"
 
 export const  enum HEADERS {
 	TOTAL_LENGTH_0_32 = 0,
@@ -46,6 +46,7 @@ export class Arena implements IStorageStrategy {
 		this._offset = buf.byteLength
 		this._view8 = new Uint8Array(buf)
 		this._view32 = new Uint32Array(buf)
+		return this
 	}
 
 	private _u(n: number): number {
@@ -120,7 +121,7 @@ export class Arena implements IStorageStrategy {
 		return this._makePtr(start, gen)
 	}
 	public read(location: ArenaLocation): Uint8Array | null {
-		const { start, generation } = this.translate(location);
+		const { offset: start, generation } = this._smallInspect(location);
 		const idx = this._idx32(start)
 		const currgen = BigInt(this._view32[idx + HEADERS.GENERATION_BYTE_0_32]!)
 
@@ -131,7 +132,7 @@ export class Arena implements IStorageStrategy {
 		return this._view8.subarray(start + this.HEADER_SIZE_BYTES, start + this.HEADER_SIZE_BYTES + dataLength);
 	}
 	public free(location: ArenaLocation): ArenaLocation {
-		const { start, generation: _ } = this.translate(location)
+		const { offset: start } = this._smallInspect(location)
 		const idx = this._idx32(start)
 		const currgen = this._view32[idx + HEADERS.GENERATION_BYTE_0_32]!
 
@@ -183,14 +184,34 @@ export class Arena implements IStorageStrategy {
 		return this._view8.subarray(start + this.HEADER_SIZE_BYTES, start + this.HEADER_SIZE_BYTES + size)
 	}
 
-	public translate(ptr: ArenaLocation) {
-		const start = this._getOffset(ptr)
+	private _smallInspect(ptr: ArenaLocation) {
+		const offset = this._getOffset(ptr)
 		const generation = ptr & 0xFFFFFFFFn;
-		return { start, generation }
+		return { offset, generation }
+	}
+	public inspect(ptr: ArenaLocation): InspectStruct {
+		const offset = this._getOffset(ptr)
+		const generation_ptr = Number(ptr & 0xFFFFFFFFn);
+
+		const totalLength = this._view32[this._idx32(offset)]!
+		const generation = Number(this._view32[this._idx32(offset) + HEADERS.GENERATION_BYTE_0_32]!)
+		return {
+			offset,
+			generation_ptr,
+			generation,
+			isSafe: generation === Number(generation_ptr),
+			totalLength,
+			payloadLength: this._view32[this._idx32(offset) + HEADERS.PAYLOAD_LENGTH_0_32]!,
+			isDeleted: this._view8[offset + HEADERS.DELETED_8] == 1,
+			UserMetaData0: this._view8[offset + HEADERS.USER_STATUS_0_8]!,
+			UserMetaData1: this._view8[offset + HEADERS.USER_STATUS_1_8]!,
+			UserMetaData2: this._view8[offset + HEADERS.USER_STATUS_2_8]!,
+			payload: this._view8.subarray(offset, offset + totalLength),
+		}
 	}
 
 	public readWithHeaders(ptr: ArenaLocation): Uint8Array | null {
-		const { start, generation } = this.translate(ptr)
+		const { offset: start, generation } = this._smallInspect(ptr)
 		let idx32 = this._idx32(start)
 		let length = this._view32[idx32 + HEADERS.PAYLOAD_LENGTH_0_32]!
 		if (BigInt(this._view32[idx32 + HEADERS.GENERATION_BYTE_0_32]!) !== generation) return null
@@ -218,11 +239,11 @@ export class Arena implements IStorageStrategy {
 		return ptrArray
 	}
 	public getHeaders(ptr: ArenaLocation): ArenaHeaders {
-		const { start, generation: _ } = this.translate(ptr)
-		const idx = this._u(start)
+		const { offset } = this._smallInspect(ptr)
+		const idx = this._u(offset)
 		return {
-			totalLength: Number(this._view32[this._idx32(start) + HEADERS.TOTAL_LENGTH_0_32]!.toString()),
-			payloadlength: Number(this._view32[this._idx32(start) + HEADERS.PAYLOAD_LENGTH_0_32]!.toString()),
+			totalLength: Number(this._view32[this._idx32(offset) + HEADERS.TOTAL_LENGTH_0_32]!.toString()),
+			payloadLength: Number(this._view32[this._idx32(offset) + HEADERS.PAYLOAD_LENGTH_0_32]!.toString()),
 			deleted: this._view8[idx + HEADERS.DELETED_8] === 1,
 			header0: Number(this._view8[idx + HEADERS.USER_STATUS_0_8]!.toString()),
 			header1: Number(this._view8[idx + HEADERS.USER_STATUS_1_8]!.toString()),
@@ -261,7 +282,7 @@ export class Arena implements IStorageStrategy {
 		this._emptySpots.fill(0)
 	}
 
-	public *records(): Generator<[Uint8Array, ArenaLocation]> {
+	public * records(): Generator<[Uint8Array, ArenaLocation]> {
 		while (this._next < this._offset) {
 			const start = this._next
 			const totalLength = this._view32[this._idx32(start) + HEADERS.TOTAL_LENGTH_0_32]!
