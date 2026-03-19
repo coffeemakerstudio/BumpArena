@@ -53,6 +53,8 @@ yarn add bumparena
 
 ## Quick Start
 
+for more Advanced Usages go to [test/example.ts](https://github.com/eugen252009/BumpArena/blob/main/test/example.ts)
+
 ```ts
 import { Arena } from "bumparena";
 import fs from "node:fs";
