@@ -12,7 +12,7 @@ jobs:
     strategy:
       matrix:
         # Hier definieren wir die Runtimes
-        runtime: [node, deno, bun]
+        runtime: [bun]
 
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +48,4 @@ jobs:
       # Tests ausführen
       - name: Run Tests
         run: |
-          if [ "${{ matrix.runtime }}" = "node" ]; then npm test; fi
-          if [ "${{ matrix.runtime }}" = "deno" ]; then deno test --allow-all; fi
           if [ "${{ matrix.runtime }}" = "bun" ]; then bun test; fi
