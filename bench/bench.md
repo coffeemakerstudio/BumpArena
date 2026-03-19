@@ -1,7 +1,9 @@
 # Benchmark 1
 
 ## bun arena.ts;
+
 183098.55 ms
+
 ```js
 {
   rss: 11240919040,
@@ -16,7 +18,9 @@ arenasize: 2097152 KB
 
 
 ## bun array.ts
+
 765961.27 ms
+
 Count: 50000000
 ```js
 {
