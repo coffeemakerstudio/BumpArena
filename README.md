@@ -92,22 +92,96 @@ arena.clear()
 
 ---
 
-## Header
+## Binary Header Specification
 
-To ensure cross-language compatibility, the Arena uses a packed binary header. This allows C/C++, Rust, or Zig to map the memory-dump directly without translation.
+BumpArena uses a fixed 16-byte packed header. Alignment is applied to the entire block, ensuring that every new Header starts at a memory address divisible by your chosen alignment (e.g., 8, 16, 32 bytes).
 
-```c 
+### Memory Layout & Alignment
+
+The total_length field does not just represent the sum of the header and data; it includes the padding required to align the next block in the Arena.
+
+| Offset (Byte) | Field | Type | Description |
+| :--- | :--- | :--- | :--- |
+| `0x00` | `total_length` | `uint32` | Header + Payload + Alignment Padding |
+| `0x04` | `payload_length` | `uint32` | Exact size of the user data |
+| `0x08` | `generation` | `uint32` | Validation counter (prevents ABA/stale pointer issues) |
+| `0x0C` | `deleted` | `uint8` | Status flag (`0x01` = deleted, `0x00` = active) |
+| `0x0D` | `user_header0` | `uint8` | Custom metadata slot 1 |
+| `0x0E` | `user_header1` | `uint8` | Custom metadata slot 2 |
+| `0x0F` | `user_header2` | `uint8` | Custom metadata slot 3 |
+| `0x10` | **Payload** | `u8[]` | User data starts here (Fixed Offset) |
+| `...` | **Padding** | `u8[N]` | Internal padding to align the next Block |
+
+### Implementation Examples
+
+Typescript
+
+```ts
+// Example: How BumpArena maps the header internally
+const view = new DataView(arena.getBuffer().buffer);
+const ptr = 0x1234; // Current allocation pointer
+
+const header = {
+    totalLength:   view.getUint32(ptr + 0,  true), // Little-endian
+    payloadLength: view.getUint32(ptr + 4,  true),
+    generation:    view.getUint32(ptr + 8,  true),
+    deleted:       view.getUint8(ptr + 12),
+    userHeader:    new Uint8Array(arena.getBuffer().buffer, ptr + 13, 3)
+};
+
+// The actual payload starts at ptr + 16
+const payload = new Uint8Array(arena.getBuffer().buffer, ptr + 16, header.payloadLength);
+```
+
+C/++
+
+```c
 typedef struct __attribute__((packed)) {
-  uint32_t total_length;
+  uint32_t total_length; // Jump to next header: current_ptr + total_length
   uint32_t payload_length;
   uint32_t generation;
   uint8_t deleted;
   uint8_t user_header0;
   uint8_t user_header1;
-  uint8_t user_header2;
+  uint8_t user_header2;uint8_t  payload[];      // Data starts at offset 16 (0x10)
 } ArenaData;
-
 ```
+
+Rust
+
+```rust
+#[repr(C, packed)]
+pub struct ArenaData {
+    pub total_length: u32, // Jump to next header: current_ptr + total_length
+    pub payload_length: u32,
+    pub generation: u32,
+    pub deleted: u8,
+    pub user_header0: u8,
+    pub user_header1: u8,
+    pub user_header2: u8,
+    // Payload follows immediately at offset 16
+}
+```
+
+go
+
+```go
+type ArenaData struct {
+	TotalLength   uint32  // Jump to next header: current_ptr + total_length
+	PayloadLength uint32  // the length of the Payload itself
+	Generation    uint32  // The Generation bits
+	Deleted       uint8   // 0x1=true,0x0=false
+	UserHeader   [3]uint8 // User Metadata
+  // Payload follows immediately at offset 16
+}
+```
+
+Key Advantages
+Zero-Copy: Directly cast your binary data to these structures in any language.
+
+Stale Pointer Protection: The generation field allows you to verify if a pointer still refers to the original data or if the memory has been reused.
+
+Alignment: 16-byte boundaries are a "sweet spot" for modern hardware architectures,.
 
 ---
 
