@@ -1,10 +1,10 @@
 import { describe, test } from "node:test"
 import { equal } from "node:assert"
-import { TestCheckDirectPtrAccess, TestCheckPtrAccess, TestUseAfterFree } from "./ptrs"
-import { TestCheckReserve } from "./reserve"
-import { TestDirectAlloc } from "./directAccess"
-import { TestIteratorAccess } from "./iterator"
-import { FuzzAlloc, FuzzDirectAlloc } from "./Fuzz"
+import { TestCheckDirectPtrAccess, TestCheckPtrAccess, TestUseAfterFree } from "./ptrs.ts"
+import { TestCheckReserve } from "./reserve.ts"
+import { TestDirectAlloc } from "./directAccess.ts"
+import { TestIteratorAccess } from "./iterator.ts"
+import { FuzzAlloc, FuzzDirectAlloc } from "./Fuzz.ts"
 
 describe("Arena Checks", () => {
 	test("Pointer Access", () => equal(TestCheckPtrAccess(), true, "Data corruption is possible!"))

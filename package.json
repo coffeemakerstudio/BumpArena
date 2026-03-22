@@ -1,6 +1,6 @@
 {
 	"name": "bumparena",
-	"version": "0.9.1",
+	"version": "0.10.1",
 	"private": false,
 	"type": "module",
 	"main": "dist/arena.js",

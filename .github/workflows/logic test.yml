@@ -1,0 +1,30 @@
+name: Multi-Runtime Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        runtime: [bun]
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Bun
+        if: matrix.runtime == 'bun'
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      - name: Install Dependencies
+        if: matrix.runtime != 'deno'
+        run: |
+          if [ "${{ matrix.runtime }}" = "node" ]; then npm install; fi
+          if [ "${{ matrix.runtime }}" = "bun" ]; then bun install; fi
+      - name: Run Tests
+        run: |
+          if [ "${{ matrix.runtime }}" = "bun" ]; then bun test; fi

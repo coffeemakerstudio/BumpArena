@@ -1,7 +1,10 @@
 # Benchmark 1
 
 ## bun arena.ts;
+
 183098.55 ms
+
+```js
 {
   rss: 11240919040,
   heapTotal: 8595075072,
@@ -9,13 +12,17 @@
   external: 2157456969,
   arrayBuffers: 2156686216,
 }
+```
 arenasize: 2097152 KB
 
 
 
 ## bun array.ts
+
 765961.27 ms
+
 Count: 50000000
+```js
 {
   rss: 28036014080,
   heapTotal: 9476152320,
@@ -23,7 +30,7 @@ Count: 50000000
   external: 7170077276,
   arrayBuffers: 2921230601,
 }
-
+```
 --- 
 
 ## Direct Comparison

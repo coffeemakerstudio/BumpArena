@@ -1,4 +1,4 @@
-import { Arena } from "../arena"
+import { Arena } from "../arena.ts"
 
 export function TestDirectAlloc(): boolean {
 	//Init
