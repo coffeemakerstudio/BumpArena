@@ -12,6 +12,8 @@
 - **Alignment:** 16-byte boundaries optimize for modern hardware
 - **Cross-Language Support:** TypeScript, C/C++, Rust, Go
 - **Mmap-Compatible:** Memory-map blocks directly for zero-copy access
+- **Streaming Support:** High-performance **newline-delimited (JSONL/CSV) streaming**, as used in our 50M record benchmark for minimal parsing overhead.
+
 
 BumpArena is a high-performance memory arena designed for JavaScript and TypeScript (optimized for Bun). It provides contiguous memory allocation, fast pointer-based access, and minimal Garbage Collection (GC) overhead, making it the ideal choice for handling industrial-scale datasets and real-time telemetry.
 
