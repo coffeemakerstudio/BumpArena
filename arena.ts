@@ -1,13 +1,13 @@
-import { type ArenaCustomHeaders, type ArenaHeaders, type ArenaLocation, type ArenaOptions, type InspectStruct, type IStorageStrategy } from "./interface.d.js"
+import { type ArenaLocation, type ArenaOptions, type InspectStruct, type IStorageStrategy } from "./interface.d.js"
 
 export const  enum HEADERS {
 	TOTAL_LENGTH_0_32 = 0,
 	PAYLOAD_LENGTH_0_32 = 1,
 	GENERATION_BYTE_0_32 = 2,
 	DELETED_8 = 12,
-	USER_STATUS_0_8 = 13,
-	USER_STATUS_1_8 = 14,
-	USER_STATUS_2_8 = 15,
+	MAGIC_BYTE_0 = 13,
+	MAGIC_BYTE_1 = 14,
+	MAGIC_BYTE_2 = 15,
 }
 export class Arena implements IStorageStrategy {
 	private HEADER_SIZE_BYTES = 16
@@ -16,21 +16,27 @@ export class Arena implements IStorageStrategy {
 	private _view32: Uint32Array
 	private _offset: number
 	private _emptySpots: Uint32Array
-	private _allignMask: 7 | 15 | 31 | 63
-	private _allignShift: number
+	private _alignMask: 7 | 15 | 31 | 63 | number
+	private _alignShift: number
 	private _bucketOffsets: number[];
 	private _bucketCapacities: number[];
 	private _bucketcount: number;
 	private _next: number = 0;
+	private MAX_ARENA_SIZE = (4 * 1024 * 1024 * 1024); // 4GB
 
 	constructor(options?: ArenaOptions) {
 		this._buffer = new ArrayBuffer(options?.initialSize || 64 * 1024)
+
 		this._view8 = new Uint8Array(this._buffer);
 		this._view32 = new Uint32Array(this._buffer)
 		this._offset = 0;
-		//@ts-ignore
-		this._allignMask = ((options?.allignment || 8) - 1!) as number
-		this._allignShift = Math.log2(this._allignMask + 1);
+
+		if ((options?.alignment! & (options?.alignment! - 1)) !== 0) {
+			throw new Error("alignment needs to be a power of 2")
+		}
+		this._alignMask = ((options?.alignment || 8) - 1!) as number
+		this._alignShift = Math.log2(this._alignMask + 1);
+
 		this._bucketCapacities = options?.bucketCapacities || [1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024]
 		this._bucketOffsets = [];
 		this._bucketcount = this._bucketCapacities.length;
@@ -54,17 +60,17 @@ export class Arena implements IStorageStrategy {
 	}
 
 	private _idx32(byteOffset: number): number {
-		return (byteOffset >>> 0) >> 2;
+		return Math.floor(byteOffset / 4);
 	}
 
 	private _makePtr(offset: number, gen: number | bigint): ArenaLocation {
-		const bOffset = BigInt(offset >>> 0);
+		const bOffset = BigInt(offset);
 		const bGen = BigInt(gen ?? 0);
 		return ((bOffset << 32n) | (bGen & 0xFFFFFFFFn)) as ArenaLocation;
 	}
 
 	private _getOffset(ptr: ArenaLocation): number {
-		return Number(BigInt(ptr) >> 32n) >>> 0;
+		return Number(BigInt(ptr) >> 32n);
 	}
 
 	private _getBucketCount(bucketIdx: number): number {
@@ -83,42 +89,43 @@ export class Arena implements IStorageStrategy {
 		this._emptySpots[this._bucketOffsets[bucketIdx]! + slotIdx + 1] = offset;
 	}
 
-	private _initBlock(start: number, dataLength: number, headers: { header0: number, header1: number, header2: number }) {
+	private _initBlock(start: number, dataLength: number) {
 		const idx = this._idx32(start)
-		const { header0: h0, header1: h1, header2: h2 } = headers;
 
-		this._view32[idx + HEADERS.TOTAL_LENGTH_0_32] = this._u((dataLength + this.HEADER_SIZE_BYTES + this._allignMask) & ~this._allignMask);
+		this._view32[idx + HEADERS.TOTAL_LENGTH_0_32] = this._u((dataLength + this.HEADER_SIZE_BYTES + this._alignMask) & ~this._alignMask);
 		this._view32[idx + HEADERS.PAYLOAD_LENGTH_0_32] = dataLength;
-
-		this._view32[idx + (HEADERS.DELETED_8 >> 2)] = ((h2 || 0) << 24) | ((h1 || 0) << 16) | ((h0 || 0) << 8);
+		this._view8[start + HEADERS.MAGIC_BYTE_0] = 0xDB;
+		this._view8[start + HEADERS.MAGIC_BYTE_1] = 0xDB;
+		this._view8[start + HEADERS.MAGIC_BYTE_2] = 0x01;
 		this._view8[start + HEADERS.DELETED_8] = 0;
 	}
 
-	public alloc(data: Uint8Array, headers?: ArenaCustomHeaders): ArenaLocation {
-		headers ||= { header0: 0, header1: 0, header2: 0 };
-
-		const needed = (data.byteLength + this.HEADER_SIZE_BYTES + this._allignMask) & ~this._allignMask;
-		const bucketIdx = (needed >> this._allignShift) - 1;
+	public alloc(data: Uint8Array): ArenaLocation {
+		const step = this._alignMask + 1;
+		const rawNeeded = data.length + this.HEADER_SIZE_BYTES;
+		const needed = Math.ceil(rawNeeded / step) * step;
+		const bucketIdx = (needed >> this._alignShift) - 1;
+		let targetOffset: number | undefined;
 		if (bucketIdx >= 0 && bucketIdx < this._bucketcount) {
 			const count = this._getBucketCount(bucketIdx);
 			if (count > 0) {
-				const recycledOffset = this._u(this._getBucketOffset(bucketIdx, count - 1));
+				targetOffset = this._u(this._getBucketOffset(bucketIdx, count - 1));
 				this._setBucketCount(bucketIdx, count - 1);
-				this._initBlock(recycledOffset, data.byteLength, headers);
-
-				const gen = this._view32[this._idx32(recycledOffset) + HEADERS.GENERATION_BYTE_0_32]!;
-				return this._makePtr(recycledOffset, gen)
 			}
 		}
-		const start = this._u(this._offset)
-		if (this._checkForSpace(needed)) this._resize()
-		this._initBlock(start, data.byteLength, headers)
+		if (targetOffset === undefined) {
+			targetOffset = this._offset;
+			const nextOffset = targetOffset + needed;
+			if (this._checkForSpace(nextOffset)) {
+				this._resize(nextOffset);
+			}
+			this._offset = nextOffset;
+		}
 
-		this._view8.set(data, start + this.HEADER_SIZE_BYTES)
-		this._offset = this._u((start + needed) & ~this._allignMask);
-
-		const gen = this._view32[this._idx32(start) + HEADERS.GENERATION_BYTE_0_32]!
-		return this._makePtr(start, gen)
+		this._initBlock(targetOffset, data.length);
+		this._view8.set(data, targetOffset + this.HEADER_SIZE_BYTES);
+		const gen = this._view32[this._idx32(targetOffset) + HEADERS.GENERATION_BYTE_0_32]!;
+		return this._makePtr(targetOffset, gen);
 	}
 	public read(location: ArenaLocation): Uint8Array | null {
 		const { offset: start, generation } = this._smallInspect(location);
@@ -140,7 +147,7 @@ export class Arena implements IStorageStrategy {
 		this._view8[this._u(start) + HEADERS.DELETED_8] = 1
 
 		const totalBlockSize = this._view32[this._idx32(start) + HEADERS.TOTAL_LENGTH_0_32]!
-		const bucketIdx = (totalBlockSize >> this._allignShift) - 1
+		const bucketIdx = (totalBlockSize >> this._alignShift) - 1
 		if (bucketIdx >= 0 && bucketIdx < this._bucketcount) {
 			const count = this._getBucketCount(bucketIdx)
 			const capacity = this._bucketCapacities[bucketIdx]!
@@ -153,15 +160,24 @@ export class Arena implements IStorageStrategy {
 	}
 
 	private _checkForSpace(size: number): boolean {
-		if (this._buffer.byteLength >= (this._offset + size)) return false
-		return true
+		const projectedSize = this._offset + size;
+		if (projectedSize > this.MAX_ARENA_SIZE) {
+			return true;
+		}
+		if (this._buffer.byteLength >= projectedSize) return false;
+		return true;
 	}
 
-	private _resize() {
+	private _resize(needed: number) {
+		const currentSize = this._buffer.byteLength;
+		let newSize = Math.min(currentSize * 2, this.MAX_ARENA_SIZE);
+		if (newSize < this._offset + needed) {
+			throw new Error(`Arena Out of Memory: Requested total ${this._offset + needed} bytes, but 4GB limit reached.`);
+		}
 		//@ts-ignore
 		if (this._buffer.transfer) this._buffer = this._buffer.transfer(this._buffer.byteLength * 2)
 		else {
-			const newBuffer = new ArrayBuffer(this._buffer.byteLength * 2);
+			const newBuffer = new ArrayBuffer(newSize);
 			new Uint8Array(newBuffer).set(this._view8);
 			this._buffer = newBuffer;
 		}
@@ -170,18 +186,26 @@ export class Arena implements IStorageStrategy {
 	}
 
 	public size(): number {
-		return this._buffer.byteLength
+		return this._offset
 	}
 
 	public getBuffer(): Uint8Array {
 		return this._view8.subarray(0, this._u(this._offset))
 	}
 	public reserve(size: number): Uint8Array {
-		const start = this._u(this._offset)
-		this._checkForSpace((this.HEADER_SIZE_BYTES + size + this._allignMask) & ~this._allignMask) && this._resize()
-		this._initBlock(start, size, { header0: 0, header1: 0, header2: 0 })
-		this._offset = ((this._offset + size + this.HEADER_SIZE_BYTES + this._allignMask) & ~this._allignMask) >>> 0
-		return this._view8.subarray(start + this.HEADER_SIZE_BYTES, start + this.HEADER_SIZE_BYTES + size)
+		const step = this._alignMask + 1;
+		const start = this._offset;
+		const totalNeededForThisBlock = size + this.HEADER_SIZE_BYTES;
+		const newOffset = Math.ceil((start + totalNeededForThisBlock) / step) * step;
+		if (this._checkForSpace(newOffset)) {
+			this._resize(newOffset);
+		}
+		this._initBlock(start, size);
+		this._offset = newOffset;
+		return this._view8.subarray(
+			start + this.HEADER_SIZE_BYTES,
+			start + this.HEADER_SIZE_BYTES + size
+		);
 	}
 
 	private _smallInspect(ptr: ArenaLocation) {
@@ -203,78 +227,71 @@ export class Arena implements IStorageStrategy {
 			totalLength,
 			payloadLength: this._view32[this._idx32(offset) + HEADERS.PAYLOAD_LENGTH_0_32]!,
 			isDeleted: this._view8[offset + HEADERS.DELETED_8] == 1,
-			UserMetaData0: this._view8[offset + HEADERS.USER_STATUS_0_8]!,
-			UserMetaData1: this._view8[offset + HEADERS.USER_STATUS_1_8]!,
-			UserMetaData2: this._view8[offset + HEADERS.USER_STATUS_2_8]!,
 			payload: this._view8.subarray(offset, offset + totalLength),
 		}
 	}
+	public collectActiveRecords(callback: (data: Uint8Array, ptr: ArenaLocation, idx: number) => void) {
+		let cursor = 0;
+		let idx = 0;
+		while (cursor < this._offset) {
+			const idx32 = this._idx32(cursor);
+			const totalLength = this._view32[idx32 + HEADERS.TOTAL_LENGTH_0_32]!;
 
-	public readWithHeaders(ptr: ArenaLocation): Uint8Array | null {
-		const { offset: start, generation } = this._smallInspect(ptr)
-		let idx32 = this._idx32(start)
-		let length = this._view32[idx32 + HEADERS.PAYLOAD_LENGTH_0_32]!
-		if (BigInt(this._view32[idx32 + HEADERS.GENERATION_BYTE_0_32]!) !== generation) return null
-		return this._view8.subarray(start + 12, start + this.HEADER_SIZE_BYTES + Number(length))
-	}
-	public collectActiveRecords(): Array<ArenaLocation> {
-		const ptrArray = new Array<ArenaLocation>()
-		const limit = this._offset;
-		let pos = 0
-		while (this._u(pos) < this._u(limit)) {
-			const totalLength = this._view32[this._idx32(pos)]!;
 			if (totalLength === 0) {
-				pos = this._idx32((pos + 16) & ~15)
+				// Sicherheits-Sprung falls wir auf ein Loch stoßen
+				cursor = (cursor + 16) & ~15;
+				if (cursor >= this._offset) break;
 				continue;
 			}
-			const isDeleted = this._view8[this._u(pos) + HEADERS.DELETED_8] === 1
+
+			const isDeleted = this._view8[cursor + HEADERS.DELETED_8] === 1;
+
 			if (!isDeleted) {
-				ptrArray.push(
-					this._makePtr(pos, this._view32[this._idx32(pos) + HEADERS.GENERATION_BYTE_0_32]!)
+				const payloadLength = this._view32[idx32 + HEADERS.PAYLOAD_LENGTH_0_32]!;
+				const gen = this._view32[idx32 + HEADERS.GENERATION_BYTE_0_32]!;
+				callback(
+					this._view8.subarray(cursor + this.HEADER_SIZE_BYTES, cursor + this.HEADER_SIZE_BYTES + payloadLength),
+					this._makePtr(cursor, gen),
+					idx++
 				);
 			}
-			pos += totalLength
-			if (totalLength === 0) break;
-		}
-		return ptrArray
-	}
-	public getHeaders(ptr: ArenaLocation): ArenaHeaders {
-		const { offset } = this._smallInspect(ptr)
-		const idx = this._u(offset)
-		return {
-			totalLength: Number(this._view32[this._idx32(offset) + HEADERS.TOTAL_LENGTH_0_32]!.toString()),
-			payloadLength: Number(this._view32[this._idx32(offset) + HEADERS.PAYLOAD_LENGTH_0_32]!.toString()),
-			deleted: this._view8[idx + HEADERS.DELETED_8] === 1,
-			header0: Number(this._view8[idx + HEADERS.USER_STATUS_0_8]!.toString()),
-			header1: Number(this._view8[idx + HEADERS.USER_STATUS_1_8]!.toString()),
-			header2: Number(this._view8[idx + HEADERS.USER_STATUS_2_8]!.toString()),
+
+			cursor += totalLength;
 		}
 	}
 	public estimate(size: number, amnt: number): number {
-		return (((size + this._allignMask) & ~this._allignMask) + this.HEADER_SIZE_BYTES) * amnt
+		const step = this._alignMask + 1
+		return ((Math.ceil(size + this.HEADER_SIZE_BYTES) / step) * step) * amnt;
 	}
 	public directAlloc(source: Uint8Array, startn: number, endn: number): ArenaLocation {
-		const start = this._u(this._offset)
+		const step = this._alignMask + 1;
 		const len = endn - startn;
-		const needed = (len + this.HEADER_SIZE_BYTES + this._allignMask) & ~this._allignMask;
-		const bucketIdx = (needed >> this._allignShift) - 1;
+		const rawNeeded = len + this.HEADER_SIZE_BYTES;
+		const alignedBlockSize = Math.ceil(rawNeeded / step) * step;
+		const bucketIdx = (alignedBlockSize >> this._alignShift) - 1;
 		if (bucketIdx >= 0 && bucketIdx < this._bucketcount) {
 			const count = this._getBucketCount(bucketIdx);
 			if (count > 0) {
-				const recycledOffset = this._u(this._getBucketOffset(bucketIdx, count - 1));
+				const recycledOffset = this._getBucketOffset(bucketIdx, count - 1);
 				this._setBucketCount(bucketIdx, count - 1);
-				this._initBlock(recycledOffset, len, { header0: 0, header1: 0, header2: 0 });
+				this._initBlock(recycledOffset, len);
+
+				this._view8.set(source.subarray(startn, endn), recycledOffset + this.HEADER_SIZE_BYTES);
+
 				const gen = this._view32[this._idx32(recycledOffset) + HEADERS.GENERATION_BYTE_0_32]!;
-				this._view8.set(source.subarray(startn, endn), recycledOffset + this.HEADER_SIZE_BYTES)
-				return this._makePtr(recycledOffset, gen)
+				return this._makePtr(recycledOffset, gen);
 			}
 		}
-		if (this._checkForSpace(needed)) this._resize()
-		this._initBlock(start, len, { header0: 0, header1: 0, header2: 0 });
-		this._offset = this._u((start + needed) & ~this._allignMask);
-		this._view8.set(source.subarray(startn, endn), start + this.HEADER_SIZE_BYTES)
-		const gen = this._view32[this._idx32(start) + HEADERS.GENERATION_BYTE_0_32]!
-		return this._makePtr(start, gen)
+		const start = this._offset;
+		const nextOffset = start + alignedBlockSize;
+		if (this._checkForSpace(nextOffset)) {
+			this._resize(nextOffset);
+		}
+		this._initBlock(start, len);
+		this._view8.set(source.subarray(startn, endn), start + this.HEADER_SIZE_BYTES);
+		this._offset = nextOffset;
+		const gen = this._view32[this._idx32(start) + HEADERS.GENERATION_BYTE_0_32]!;
+		return this._makePtr(start, gen);
 	}
 
 	public clear() {
@@ -282,28 +299,22 @@ export class Arena implements IStorageStrategy {
 		this._emptySpots.fill(0)
 	}
 
-	public * records(): Generator<[Uint8Array, ArenaLocation]> {
-		while (this._next < this._offset) {
-			const start = this._next
-			const totalLength = this._view32[this._idx32(start) + HEADERS.TOTAL_LENGTH_0_32]!
-			const payloadLength = this._view32[this._idx32(start) + HEADERS.PAYLOAD_LENGTH_0_32]!
+	public records(): ([Uint8Array, ArenaLocation] | undefined) {
+		const start = this._next
+		const totalLength = this._view32[this._idx32(start) + HEADERS.TOTAL_LENGTH_0_32]!
+		const payloadLength = this._view32[this._idx32(start) + HEADERS.PAYLOAD_LENGTH_0_32]!
+		if (totalLength === 0) {
+			this._next = (start + 16) & ~15
+		}
+		const isDeleted = this._view8[start + HEADERS.DELETED_8] === 1
+		const ptr = this._makePtr(start, this._view32[this._idx32(start) + HEADERS.GENERATION_BYTE_0_32]!)
+		this._next += totalLength
 
-			if (totalLength === 0) {
-				this._next = (start + 16) & ~15
-				continue
-			}
-
-			const isDeleted = this._view8[start + HEADERS.DELETED_8] === 1
-			const ptr = this._makePtr(start, this._view32[this._idx32(start) + HEADERS.GENERATION_BYTE_0_32]!)
-
-			this._next += totalLength
-
-			if (!isDeleted) {
-				yield [
-					this._view8.subarray(start + this.HEADER_SIZE_BYTES, start + this.HEADER_SIZE_BYTES + payloadLength),
-					ptr
-				]
-			}
+		if (!isDeleted) {
+			return [
+				this._view8.subarray(start + this.HEADER_SIZE_BYTES, start + this.HEADER_SIZE_BYTES + payloadLength),
+				ptr
+			]
 		}
 	}
 	public reset() {

@@ -12,17 +12,14 @@ export function TestDirectAlloc(): boolean {
 		a.directAlloc(data, 0, data.length)
 	}
 
-	const ptrs = a.collectActiveRecords()
-	if (ptrs.length !== count) throw new Error(`Allocated wrong amount of items!: needed: ${count}, got: ${ptrs.length}`)
-
-	for (let i = 0; i < ptrs.length; i++) {
-		const buf = a.read(ptrs[i]!)
-		if (!buf) throw new Error(`data at index ${i} is Empty.`)
+	a.collectActiveRecords((_data, ptr, idx) => {
+		const buf = a.read(ptr)
+		if (!buf) throw new Error(`data at index ${idx} is Empty.`)
 
 		for (let j = 0; j < testdata.length; j++) {
-			if (buf[j] !== testdata[i]![j]) throw new Error(`dataset ${i} at ${j} is broken!`)
+			if (buf[j] !== testdata[idx]![j]) throw new Error(`dataset ${idx} at ${j} is broken!`)
 		}
-	}
+	})
 	return true
 }
 

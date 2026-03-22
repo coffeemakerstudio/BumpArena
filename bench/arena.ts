@@ -1,7 +1,6 @@
 import { pipeline } from "node:stream/promises";
 import { Arena } from "../arena";
-import { noopWriter, stream } from "./init.ts"
-
+import { stream } from "./init.ts"
 
 let tmp: Uint8Array | null = null
 function getNewArenaTransform() {
@@ -53,25 +52,44 @@ function getNewArenaTransform() {
 	})
 };
 const arena = new Arena();
+const tries = 2;
 (async () => {
-	const start = performance.now()
-	for (let i = 0; i < 10; i++) {
+	const runs: Array<any> = [];
+	for (let i = 0; i < tries; i++) {
+		const start = performance.now()
 		tmp = null
 		const arenatransform = getNewArenaTransform()
 		const reader = stream()
-
 		await pipeline(
 			reader,
 			arenatransform
 		)
-		// const decode = new TextDecoder()
-		// for (const itemptr of arena.records()) {
-		// 	noopWriter(decode.decode(itemptr[0]))
-		// }
-		// arena.clear()
+		const end = performance.now();
+		const totalTime = end - start;
+		const totalRecords = 10_000_000;
+		const mem = process.memoryUsage();
+		runs.push([
+			{
+				Metric: "Records",
+				Arena: totalRecords,
+			},
+			{
+				Metric: "Total Time (s)",
+				Arena: (totalTime / 1000).toFixed(2),
+			},
+			{
+				Metric: "Throughput (records/sec)",
+				Arena: (totalRecords / (totalTime / 1000)).toLocaleString(),
+			},
+			{
+				Metric: "Heap Used (GB)",
+				Arena: (mem.heapUsed / 1024 / 1024 / 1024).toFixed(2),
+			},
+			{
+				Metric: "RSS (GB)",
+				Arena: (mem.rss / 1024 / 1024 / 1024).toFixed(2),
+			}
+		]);
 	}
-	const end = performance.now()
-	console.log(`${(end - start).toFixed(2)} ms`)
-	console.log(process.memoryUsage())
-	console.log(`arenasize: ${arena.size() / 1024} KB`)
-})();
+
+})()
