@@ -1,11 +1,13 @@
 import { Arena } from "../arena.ts"
+const isCI = !!process.env.CI;
+const iterations = isCI ? 10000 : 100000;
 
 export function FuzzAlloc() {
-	const arena = new Arena({ initialSize: 1024 * 1024 * 10 }); // 10MB Start
+	const arena = new Arena({ initialSize: 1024 * 1024 * 10 });
 	const activePointers = new Map<number, { ptr: any, data: Uint8Array }>();
 	let nextId = 0;
 
-	for (let i = 0; i < 100000; i++) {
+	for (let i = 0; i < iterations; i++) {
 		const action = Math.random();
 
 		if (action > 0.3 || activePointers.size === 0) {
@@ -24,22 +26,19 @@ export function FuzzAlloc() {
 		}
 	}
 
-	console.log(`Fuzzing beendet. Aktive Records: ${activePointers.size}`);
+	console.log(`Fuzzing ended. active Records: ${activePointers.size}`);
 
-	for (const [id, { ptr, data }] of activePointers) {
+	for (const [_id, { ptr, data }] of activePointers) {
 		const storedData = arena.read(ptr)!;
 
 		if (Buffer.from(storedData).compare(data) !== 0) {
-			console.log(id, ptr, data, storedData, data)
-			throw new Error("Inhalt passt nicht!");
+			throw new Error("data isn't matching!");
 		}
 	}
 
 	let foundCount = 0;
-	arena.collectActiveRecords((data, ptr, idx) => {
+	arena.collectActiveRecords((_data, _ptr, _idx) => {
 		foundCount++;
-		// Optional: Prüfen ob dieser Pointer in unserer Map bekannt ist
-		// (Vorsicht: BigInt Pointer Vergleich beachten)
 	});
 
 	if (foundCount !== activePointers.size) return false
@@ -47,11 +46,11 @@ export function FuzzAlloc() {
 };
 
 export function FuzzDirectAlloc() {
-	const arena = new Arena({ initialSize: 1024 * 1024 * 10 }); // 10MB Start
+	const arena = new Arena({ initialSize: 1024 * 1024 * 10 });
 	const activePointers = new Map<number, { ptr: any, data: Uint8Array }>();
 	let nextId = 0;
 
-	for (let i = 0; i < 100000; i++) {
+	for (let i = 0; i < iterations; i++) {
 		const action = Math.random();
 
 		if (action > 0.3 || activePointers.size === 0) {
@@ -70,14 +69,14 @@ export function FuzzDirectAlloc() {
 		}
 	}
 
-	console.log(`Fuzzing beendet. Aktive Records: ${activePointers.size}`);
+	console.log(`Fuzzing ended. active Records: ${activePointers.size}`);
 
 	for (const [id, { ptr, data }] of activePointers) {
 		const storedData = arena.read(ptr)!;
 
 		if (Buffer.from(storedData).compare(data) !== 0) {
 			console.log(id, ptr, data, storedData, data)
-			throw new Error("Inhalt passt nicht!");
+			throw new Error("data isn't matching!");
 		}
 	}
 

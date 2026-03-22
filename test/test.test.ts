@@ -17,4 +17,3 @@ describe("Arena Checks", () => {
 	test("Arena Fuzz-Test: Random Alloc/Free & Integrity", () => equal(FuzzAlloc(), true, "Arena Fuzz-Test: Random Alloc/Free & Integrity"))
 	test("Arena Fuzz-Test: Random DirectAlloc/Free & Integrity", () => equal(FuzzDirectAlloc(), true, "Arena Fuzz-Test: Random DirectAlloc/Free & Integrity"))
 })
-
