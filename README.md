@@ -4,7 +4,7 @@
 [![license](https://img.shields.io/npm/l/bumparena.svg?style=flat-square)](https://github.com/dein-nutzername/bumparena/blob/main/LICENSE)
 [![Logic Test](https://github.com/eugen252009/BumpArena/actions/workflows/logic%20test.yml/badge.svg)](https://github.com/eugen252009/BumpArena/actions/workflows/logic%20test.yml)
 
-**4.2x faster than standard arrays while using ~60% less RAM!** 💾⚡
+**4.2x faster and ~60% less RAM when processing 50M records.**
 
 BumpArena is a high-performance memory arena designed for JavaScript and TypeScript (optimized for Bun). It provides contiguous memory allocation, fast pointer-based access, and minimal Garbage Collection (GC) overhead, making it the ideal choice for handling industrial-scale datasets and real-time telemetry.
 
