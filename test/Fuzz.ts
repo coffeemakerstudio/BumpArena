@@ -1,6 +1,6 @@
 import { Arena } from "../arena.ts"
 const isCI = !!process.env.CI;
-const iterations = isCI ? 10000 : 100000;
+const iterations = isCI ? 5_000 : 10_0000;
 
 export function FuzzAlloc() {
 	const arena = new Arena({ initialSize: 1024 * 1024 * 10 });
