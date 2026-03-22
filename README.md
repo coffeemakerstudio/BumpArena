@@ -1,7 +1,7 @@
 # 🚀 BumpArena: High-Performance Memory Management for Bun/TS
 
 [![npm version](https://img.shields.io/npm/v/bumparena.svg?style=flat-square)](https://www.npmjs.com/package/bumparena)
-[![license](https://img.shields.io/npm/l/bumparena.svg?style=flat-square)](https://github.com/dein-nutzername/bumparena/blob/main/LICENSE)
+[![license](https://img.shields.io/npm/l/bumparena.svg?style=flat-square)](https://github.com/eugen252009/bumparena/blob/main/LICENSE)
 [![Logic Test](https://github.com/eugen252009/BumpArena/actions/workflows/logic%20test.yml/badge.svg)](https://github.com/eugen252009/BumpArena/actions/workflows/logic%20test.yml)
 
 **4.2x faster and ~60% less RAM when processing 50M records.**
