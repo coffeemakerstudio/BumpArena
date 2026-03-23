@@ -1,43 +1,67 @@
 import Bun from "bun";
 import { Arena } from "../arena.ts";
+import { testfile } from "./init.ts"
+import { unlinkSync, existsSync } from "node:fs";
 
-const file = Bun.mmap("./test.txt");
-const arena = new Arena({ initialSize: (2 ** 32) });
+const shmPath = "/dev/shm/Bumparena.db";
+function fastParseInt(uint8: Uint8Array): number {
+	let num = 0;
+	for (let i = 0; i < uint8.length; i++) {
+		num = num * 10 + (uint8[i] - 48);
+	}
+	return num;
+}
 
-(() => {
+(async () => {
+	if (existsSync(shmPath)) {
+		unlinkSync(shmPath);
+	}
 	const start = performance.now()
-	for (let pos = 0; pos < file.length;) {
-		const idx = file.indexOf(10, pos)
-		if (idx === -1) { arena.directAlloc(file, pos, file.length); break; }
-		arena.directAlloc(file, pos, idx)
-		pos = idx + 1
-	}
-	const injest = performance.now()
-	let i = 0
-	for (const item of arena.fastRecords()!) {
-		if (!item) break
-		i++
-	}
-	const iteratefast = performance.now()
-	arena.reset()
-	i = 0
-	for (const _ of arena.records()) {
-		i++
-	}
-	const end = performance.now()
-	const totalTime = (end - start) / 1000
-	const injestTime = (injest - start) / 1000
-	const iterateFastTime = (iteratefast - injest) / 1000
-	const iterateSlowTime = (end - iteratefast) / 1000
+	const file = Bun.mmap(testfile);
+	const arena = new Arena({ initialSize: 320000000 });
 
-	console.log(`Items: ${i}`)
-	console.log(`Total: ${(totalTime).toFixed(2)} ms`)
-	console.log(`Injest: ${(injestTime).toFixed(2)} ms`)
-	console.log(`iteration_slow: ${(iterateFastTime).toFixed(2)} ms`)
-	console.log(`iteration_fast: ${(iterateSlowTime).toFixed(2)} ms`)
-	console.log(`Arena Size: ${arena.size() / (1024 * 1024 * 1024)} GB`)
+	let totalSum = 0;
+	let totalRecords = 0;
+	let pos = 0;
+
+	for (let i = 0; i < file.length; i++) {
+		if (file[i] === 10) {
+			const line = file.subarray(pos, i);
+
+			if (line.length > 0) {
+				arena.directAlloc(file, pos, i);
+				totalSum += fastParseInt(line);
+				totalRecords++;
+			}
+			pos = i + 1;
+		}
+	}
+
+	await Bun.write(shmPath, arena.getBuffer())
+	arena.clear()
+	const file2 = Bun.mmap(shmPath)
+	arena.import(file2.buffer)
+	let newTotalSum = 0;
+	arena.collectActiveRecords((data) => {
+		newTotalSum += fastParseInt(data)
+	})
+
+
+	const end = performance.now();
+	const totalTimeMs = end - start;
+	const totalTimeSec = totalTimeMs / 1000;
+
+	const stats = {
+		totalTime: totalTimeSec.toFixed(3) + "s",
+		throughput: Math.round(totalRecords / totalTimeSec).toLocaleString() + " lines/s",
+		rss: (process.memoryUsage().rss / 1024 / 1024 / 1024).toFixed(2) + " GB",
+		heap: (process.memoryUsage().heapUsed / 1024 / 1024 / 1024).toFixed(2) + " GB"
+	};
+
+	if (process.env.BENCH_JSON) {
+		process.stdout.write(`---JSON---${JSON.stringify(stats)}`);
+	} else {
+		console.log("Integrity Check:", newTotalSum === totalSum);
+		console.table(stats);
+	}
 })()
-
-Bun.write("output.db", arena.getBuffer())
-
-

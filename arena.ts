@@ -90,9 +90,11 @@ export class Arena implements IStorageStrategy {
 	}
 
 	private _initBlock(start: number, dataLength: number) {
+		const rawSize = dataLength + this.HEADER_SIZE_BYTES;
+		const alignedSize = (rawSize + this._alignMask) & ~this._alignMask;
 		const idx = this._idx32(start)
-
-		this._view32[idx + HEADERS.TOTAL_LENGTH_0_32] = this._u((dataLength + this.HEADER_SIZE_BYTES + this._alignMask) & ~this._alignMask);
+		this._view32[idx + HEADERS.TOTAL_LENGTH_0_32] = alignedSize >>> 0;
+		// this._view32[idx + HEADERS.TOTAL_LENGTH_0_32] = this._u((dataLength + this.HEADER_SIZE_BYTES + this._alignMask) & ~this._alignMask);
 		this._view32[idx + HEADERS.PAYLOAD_LENGTH_0_32] = dataLength;
 		this._view8[start + HEADERS.MAGIC_BYTE_0] = 0xDB;
 		this._view8[start + HEADERS.MAGIC_BYTE_1] = 0xDB;
@@ -102,10 +104,13 @@ export class Arena implements IStorageStrategy {
 
 	public alloc(data: Uint8Array): ArenaLocation {
 		const step = this._alignMask + 1;
-		const rawNeeded = data.length + this.HEADER_SIZE_BYTES;
+		const dataLen = data.length;
+		const rawNeeded = dataLen + this.HEADER_SIZE_BYTES;
+
 		const needed = Math.ceil(rawNeeded / step) * step;
-		const bucketIdx = (needed >> this._alignShift) - 1;
+		const bucketIdx = Math.floor(needed / step) - 1;
 		let targetOffset: number | undefined;
+
 		if (bucketIdx >= 0 && bucketIdx < this._bucketcount) {
 			const count = this._getBucketCount(bucketIdx);
 			if (count > 0) {
@@ -113,20 +118,24 @@ export class Arena implements IStorageStrategy {
 				this._setBucketCount(bucketIdx, count - 1);
 			}
 		}
+
 		if (targetOffset === undefined) {
 			targetOffset = this._offset;
 			const nextOffset = targetOffset + needed;
-			if (this._checkForSpace(nextOffset)) {
-				this._resize(nextOffset);
+			if (nextOffset > this._buffer.byteLength) {
+				this._resize(needed);
 			}
+
 			this._offset = nextOffset;
 		}
 
-		this._initBlock(targetOffset, data.length);
+		this._initBlock(targetOffset, dataLen);
 		this._view8.set(data, targetOffset + this.HEADER_SIZE_BYTES);
-		const gen = this._view32[this._idx32(targetOffset) + HEADERS.GENERATION_BYTE_0_32]!;
+
+		const gen = this._view32[this._idx32(targetOffset) + HEADERS.GENERATION_BYTE_0_32]! >>> 0;
 		return this._makePtr(targetOffset, gen);
 	}
+
 	public read(location: ArenaLocation): Uint8Array | null {
 		const { offset: start, generation } = this._smallInspect(location);
 		const idx = this._idx32(start)
@@ -170,19 +179,33 @@ export class Arena implements IStorageStrategy {
 
 	private _resize(needed: number) {
 		const currentSize = this._buffer.byteLength;
-		let newSize = Math.min(currentSize * 2, this.MAX_ARENA_SIZE);
-		if (newSize < this._offset + needed) {
-			throw new Error(`Arena Out of Memory: Requested total ${this._offset + needed} bytes, but 4GB limit reached.`);
+		const requestedTotal = this._offset + needed;
+
+		let newSize = currentSize * 2;
+		if (newSize > this.MAX_ARENA_SIZE) {
+			newSize = this.MAX_ARENA_SIZE;
 		}
+
+		// Wenn selbst die 4GB (newSize) nicht für den Request reichen
+		if (newSize < requestedTotal) {
+			console.log("DEBUG:", this._offset, this._buffer.byteLength, "Requested:", requestedTotal);
+			throw new Error(
+				`Arena Out of Memory: Requested ${requestedTotal} bytes, but 4GB limit reached.`
+			);
+		}
+
 		//@ts-ignore
-		if (this._buffer.transfer) this._buffer = this._buffer.transfer(this._buffer.byteLength * 2)
-		else {
+		if (this._buffer.transfer) {
+			//@ts-ignore
+			this._buffer = this._buffer.transfer(newSize);
+		} else {
 			const newBuffer = new ArrayBuffer(newSize);
 			new Uint8Array(newBuffer).set(this._view8);
 			this._buffer = newBuffer;
 		}
-		this._view8 = new Uint8Array(this._buffer)
-		this._view32 = new Uint32Array(this._buffer)
+
+		this._view8 = new Uint8Array(this._buffer);
+		this._view32 = new Uint32Array(this._buffer);
 	}
 
 	public size(): number {
@@ -190,7 +213,7 @@ export class Arena implements IStorageStrategy {
 	}
 
 	public getBuffer(): Uint8Array {
-		return this._view8.subarray(0, this._u(this._offset))
+		return this._view8.subarray(0, this._offset)
 	}
 	public reserve(size: number): Uint8Array {
 		const step = this._alignMask + 1;
@@ -235,17 +258,13 @@ export class Arena implements IStorageStrategy {
 		let idx = 0;
 		while (cursor < this._offset) {
 			const idx32 = this._idx32(cursor);
-			const totalLength = this._view32[idx32 + HEADERS.TOTAL_LENGTH_0_32]!;
+			const totalLength = this._view32[idx32 + HEADERS.TOTAL_LENGTH_0_32]! >>> 0;
 
-			if (totalLength === 0) {
-				// Sicherheits-Sprung falls wir auf ein Loch stoßen
-				cursor = (cursor + 16) & ~15;
-				if (cursor >= this._offset) break;
-				continue;
+			if (totalLength < this.HEADER_SIZE_BYTES) {
+				console.error(`Corrupt block at ${cursor}, length ${totalLength}`);
+				break;
 			}
-
 			const isDeleted = this._view8[cursor + HEADERS.DELETED_8] === 1;
-
 			if (!isDeleted) {
 				const payloadLength = this._view32[idx32 + HEADERS.PAYLOAD_LENGTH_0_32]!;
 				const gen = this._view32[idx32 + HEADERS.GENERATION_BYTE_0_32]!;
@@ -284,8 +303,8 @@ export class Arena implements IStorageStrategy {
 		}
 		const start = this._offset;
 		const nextOffset = start + alignedBlockSize;
-		if (this._checkForSpace(nextOffset)) {
-			this._resize(nextOffset);
+		if (nextOffset > this._buffer.byteLength) {
+			this._resize(alignedBlockSize);
 		}
 		this._initBlock(start, len);
 		this._view8.set(source.subarray(startn, endn), start + this.HEADER_SIZE_BYTES);

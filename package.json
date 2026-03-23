@@ -10,6 +10,8 @@
 	"scripts": {
 		"build": "tsc",
 		"test": "node ./dist/test/test.test.js",
+		"bench:init": "bun run bench/generateTestdata.ts",
+		"bench": "bun run bench/runner.ts",
 		"push": "bun test && tsc && npm pub"
 	},
 	"repository": {
