@@ -13,7 +13,8 @@
 - **Alignment:** 16-byte boundaries optimize for modern hardware
 - **Cross-Language Support:** TypeScript, C/C++, Rust, Go
 - **Mmap-Compatible:** Memory-map blocks directly for zero-copy access
-- **Streaming Support:** High-performance **newline-delimited (JSONL/CSV) streaming**, as used in our 50M record benchmark for minimal parsing overhead.
+- **Streaming Support:** High-performance 
+- **newline-delimited (JSONL/CSV) streaming**, as used in our 50M record benchmark for minimal parsing overhead.
 
 
 BumpArena is a high-performance memory arena designed for JavaScript and TypeScript (optimized for Bun). It provides contiguous memory allocation, fast pointer-based access, and minimal Garbage Collection (GC) overhead, making it the ideal choice for handling industrial-scale datasets and real-time telemetry.
@@ -101,8 +102,7 @@ arena.clear()
 ## Advanced Usage
 
 - Direct allocation from existing buffers with `directAlloc()`
-- Custom headers for allocations (`header0`, `header1`, `header2`)
-- Iterate all allocations using `label()`
+- Iterate all allocations using `records()`
 - Estimate memory usage with `estimate(size, amount)`
 
 ---
@@ -141,7 +141,6 @@ const header = {
     payloadLength: view.getUint32(ptr + 4,  true),
     generation:    view.getUint32(ptr + 8,  true),
     deleted:       view.getUint8(ptr + 12),
-    userHeader:    new Uint8Array(arena.getBuffer().buffer, ptr + 13, 3)
 };
 
 // The actual payload starts at ptr + 16
