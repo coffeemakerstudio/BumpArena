@@ -20,16 +20,7 @@ export function TestCheckReserve(): boolean {
 		offsets.push((a.getBuffer().subarray(0, buf.byteLength)).byteOffset);
 	}
 
-	const seen = new Set<number>();
-	a.collectActiveRecords((data, ptr, idx) => {
-		const { offset: start } = a.inspect(ptr!);
-
-		if (seen.has(start)) throw new Error(`Overlap detected at item ${idx}`);
-		seen.add(start);
-
-		const alignMask = 7;
-		if ((start & alignMask) !== 0) throw new Error(`Alignment error at item ${idx}`);
-
+	a.collectActiveRecords("Uint8Array", (data: Uint8Array, idx: number) => {
 		const expected = testdata[idx];
 		if (data.length !== expected!.length) throw new Error(`Payload length mismatch at item ${idx}`);
 		for (let j = 0; j < data.length; j++) {

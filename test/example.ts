@@ -7,12 +7,12 @@ const arena = new Arena({ initialSize: 1024 * 1024 * 1024 });
 
 // 2. Map data instantly (Zero-Copy)
 const data = new Uint8Array([10, 20, 30, 40]);
-const ptr = arena.directAlloc(data, 0, data.length);
+const ptr = arena.alloc(data, 0, data.length);
 // Create another Payload
 const payload = new Uint8Array(20);
 payload.forEach((_, id: number, arr: Uint8Array) => { arr[id] = id });
-arena.directAlloc(payload, 0, payload.length)
-arena.directAlloc(payload.reverse(), 0, payload.length)
+arena.alloc(payload, 0, payload.length)
+arena.alloc(payload.reverse(), 0, payload.length)
 
 // 3. Retrieve (O(1) access)
 const _data_payload = arena.read(ptr);
