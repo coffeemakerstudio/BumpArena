@@ -37,7 +37,7 @@ export function FuzzAlloc() {
 	}
 
 	let foundCount = 0;
-	arena.collectActiveRecords((_data, _ptr, _idx) => {
+	arena.collectActiveRecords("Uint8Array", () => {
 		foundCount++;
 	});
 
@@ -56,7 +56,7 @@ export function FuzzDirectAlloc() {
 		if (action > 0.3 || activePointers.size === 0) {
 			const size = Math.floor(Math.random() * 100) + 1;
 			const mockData = new Uint8Array(size).fill(i % 255);
-			const ptr = arena.directAlloc(mockData, 0, mockData.length);
+			const ptr = arena.alloc(mockData, 0, mockData.length);
 
 			activePointers.set(nextId++, { ptr, data: mockData });
 		} else {
@@ -81,7 +81,7 @@ export function FuzzDirectAlloc() {
 	}
 
 	let foundCount = 0;
-	arena.collectActiveRecords(() => {
+	arena.collectActiveRecords("Uint8Array", () => {
 		foundCount++;
 	});
 
