@@ -1,4 +1,4 @@
-import { Arena } from "../arena.ts"
+import { Arena } from "../arena.js"
 const isCI = !!process.env.CI;
 const iterations = isCI ? 5_000 : 10_0000;
 
@@ -19,10 +19,10 @@ export function FuzzAlloc() {
 		} else {
 			const ids = Array.from(activePointers.keys());
 			const randomId = ids[Math.floor(Math.random() * ids.length)];
-			const { ptr } = activePointers.get(randomId)!;
+			const { ptr } = activePointers.get(randomId!)!;
 
 			arena.free(ptr);
-			activePointers.delete(randomId);
+			activePointers.delete(randomId!);
 		}
 	}
 
@@ -62,10 +62,10 @@ export function FuzzDirectAlloc() {
 		} else {
 			const ids = Array.from(activePointers.keys());
 			const randomId = ids[Math.floor(Math.random() * ids.length)];
-			const { ptr } = activePointers.get(randomId)!;
+			const { ptr } = activePointers.get(randomId!)!;
 
 			arena.free(ptr);
-			activePointers.delete(randomId);
+			activePointers.delete(randomId!);
 		}
 	}
 

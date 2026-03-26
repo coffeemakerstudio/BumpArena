@@ -1,4 +1,4 @@
-import { createWriteStream, createReadStream } from "node:fs";
+import { createWriteStream } from "node:fs";
 export const testfile = "bench/bigtest.txt"
 function splitmix32(a: number) {
 	return function() {
@@ -9,9 +9,7 @@ function splitmix32(a: number) {
 	}
 };
 
-export function noopWriter(_data: any) { return true; };
-
-async function generateTestData(seed: number, count: number) {
+export async function generateData(seed: number, count: number) {
 	const writer = createWriteStream(testfile, { highWaterMark: 16 * 1024 * 1024 })
 	const random = splitmix32(seed)
 	const characters = '0123456789';
@@ -27,12 +25,4 @@ async function generateTestData(seed: number, count: number) {
 			})
 		}
 	}
-};
-
-export const stream = () => {
-	return createReadStream(testfile)
-};
-
-export function generateData(seed: number, count: number) {
-	generateTestData(seed, count);
 }

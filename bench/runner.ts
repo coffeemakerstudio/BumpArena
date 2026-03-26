@@ -1,18 +1,18 @@
 import { spawnSync } from "bun";
-import { writeFileSync } from "node:fs";
 
 const benchmarks = [
-	{ id: "Array", path: "bench/array.ts", label: "Standard Array" },
-	{ id: "Arena", path: "bench/arena.ts", label: "**BumpArena**" },
-	{ id: "Turbo", path: "bench/turbo.ts", label: "**BumpArena (TURBO)**" },
+	{ id: "naive Array", path: "bench/implementation_naive-array.js", label: "Naive Array" },
+	{ id: "optimized Array", path: "bench/implementation_array.js", label: "Standard Array" },
+	{ id: "normal Arena", path: "bench/implementation_arena.js", label: "**BumpArena**" },
+	{ id: "optimized Arena", path: "bench/implementation_arena-turbo.ts", label: "**BumpArena (TURBO)**" },
 ];
 
 const results: any[] = [];
 
-console.log("🚀 Starte isolierte Benchmarks...");
+console.log("🚀 Start isolated Benchmarks...");
 
 for (const b of benchmarks) {
-	process.stdout.write(`Laufe ${b.id}... `);
+	process.stdout.write(`Walking ${b.id}... `);
 
 	const proc = spawnSync(["bun", "run", b.path], {
 		cwd: process.cwd(),
@@ -22,17 +22,17 @@ for (const b of benchmarks) {
 	if (proc.success) {
 		try {
 			const input = proc.stdout.toString()
-			const data = JSON.parse(input.split("---JSON---")[1]);
+			const data = JSON.parse(input.split("---JSON---")[1]!);
 			console.log("DEBUG - ", data);
 			results.push({ ...b, ...data });
 			console.log("✅");
 		} catch (e) {
-			console.log("❌ (JSON Parse Fehler)");
+			console.log("❌ (JSON Parse Error)");
 			console.log(e, proc.stdout.toString())
 		}
 	} else {
 		console.log(`❌ (Exit Code ${proc.exitCode})`);
-		console.error("\n--- FEHLER-OUTPUT ---");
+		console.error("\n--- Error-OUTPUT ---");
 		console.error(proc.stderr.toString() || proc.stdout.toString());
 		console.error("---------------------\n");
 	}
@@ -43,7 +43,7 @@ if (results.length === benchmarks.length) {
 	const labels = results.map(r => r.label).join(" | ");
 	const separator = results.map(() => "---").join(" | ");
 
-	let md = `# Benchmark Breakdown\n\n*Zuletzt aktualisiert: ${new Date().toLocaleString()}*\n\n`;
+	let md = `# Benchmark Breakdown\n\n*last updated: ${new Date().toLocaleString()}*\n\n`;
 	md += `| Metric | ${labels} |\n`;
 	md += `| :--- | ${separator} |\n`;
 
@@ -60,9 +60,8 @@ if (results.length === benchmarks.length) {
 		md += `| ${metric} | ${values} |\n`;
 	});
 
-	// Datei schreiben
 	await Bun.write("bench.md", md);
-	console.log("✅ bench.md wurde erfolgreich erstellt!");
+	console.log("✅ bench.md was created successfully!");
 } else {
-	console.log("⚠️  Markdown wurde nicht erstellt, da Benchmarks fehlgeschlagen sind.");
+	console.log("⚠️ Some Benchmarks failed, did not create File.");
 }

@@ -1,15 +1,35 @@
-import { type ArenaLocation, type ArenaOptions, type InspectStruct, type IStorageStrategy } from "./interface.d.js"
+import { type ArenaLocation, type ArenaOptions, type InspectStruct } from "./interface.d.js"
 
 export const  enum HEADERS {
 	TOTAL_LENGTH_0_32 = 0,
 	PAYLOAD_LENGTH_0_32 = 1,
 	GENERATION_BYTE_0_32 = 2,
-	DELETED_8 = 12,
+	STATUS_8 = 12,
 	MAGIC_BYTE_0 = 13,
 	MAGIC_BYTE_1 = 14,
 	MAGIC_BYTE_2 = 15,
 }
-export class Arena implements IStorageStrategy {
+export const enum BlockStatus {
+	Ready = 0x00,
+	Deleted = 0x01,
+	Writing = 0x02,
+}
+
+interface ArenaTypeMap {
+	"Uint8Array": Uint8Array;
+	"Uint16Array": Uint16Array;
+	"Uint32Array": Uint32Array;
+	"BigUint64Array": BigUint64Array;
+	"BigInt64Array": BigInt64Array;
+	"Float32Array": Float32Array;
+	"Float64Array": Float64Array;
+	"bigint": bigint;
+	"string": string;
+	"number": number;
+}
+type ArenaTypeName = keyof ArenaTypeMap
+
+export class Arena {
 	private HEADER_SIZE_BYTES = 16
 	private _buffer: ArrayBufferLike
 	private _view8: Uint8Array
@@ -90,50 +110,16 @@ export class Arena implements IStorageStrategy {
 	}
 
 	private _initBlock(start: number, dataLength: number) {
+		// const start = Atomics.add(this._view32, OFFSET_INDEX, needed);
 		const rawSize = dataLength + this.HEADER_SIZE_BYTES;
 		const alignedSize = (rawSize + this._alignMask) & ~this._alignMask;
 		const idx = this._idx32(start)
 		this._view32[idx + HEADERS.TOTAL_LENGTH_0_32] = alignedSize >>> 0;
-		// this._view32[idx + HEADERS.TOTAL_LENGTH_0_32] = this._u((dataLength + this.HEADER_SIZE_BYTES + this._alignMask) & ~this._alignMask);
 		this._view32[idx + HEADERS.PAYLOAD_LENGTH_0_32] = dataLength;
 		this._view8[start + HEADERS.MAGIC_BYTE_0] = 0xDB;
 		this._view8[start + HEADERS.MAGIC_BYTE_1] = 0xDB;
 		this._view8[start + HEADERS.MAGIC_BYTE_2] = 0x01;
-		this._view8[start + HEADERS.DELETED_8] = 0;
-	}
-
-	public alloc(data: Uint8Array): ArenaLocation {
-		const step = this._alignMask + 1;
-		const dataLen = data.length;
-		const rawNeeded = dataLen + this.HEADER_SIZE_BYTES;
-
-		const needed = Math.ceil(rawNeeded / step) * step;
-		const bucketIdx = Math.floor(needed / step) - 1;
-		let targetOffset: number | undefined;
-
-		if (bucketIdx >= 0 && bucketIdx < this._bucketcount) {
-			const count = this._getBucketCount(bucketIdx);
-			if (count > 0) {
-				targetOffset = this._u(this._getBucketOffset(bucketIdx, count - 1));
-				this._setBucketCount(bucketIdx, count - 1);
-			}
-		}
-
-		if (targetOffset === undefined) {
-			targetOffset = this._offset;
-			const nextOffset = targetOffset + needed;
-			if (nextOffset > this._buffer.byteLength) {
-				this._resize(needed);
-			}
-
-			this._offset = nextOffset;
-		}
-
-		this._initBlock(targetOffset, dataLen);
-		this._view8.set(data, targetOffset + this.HEADER_SIZE_BYTES);
-
-		const gen = this._view32[this._idx32(targetOffset) + HEADERS.GENERATION_BYTE_0_32]! >>> 0;
-		return this._makePtr(targetOffset, gen);
+		this._view8[start + HEADERS.STATUS_8] = BlockStatus.Writing;
 	}
 
 	public read(location: ArenaLocation): Uint8Array | null {
@@ -142,7 +128,7 @@ export class Arena implements IStorageStrategy {
 		const currgen = BigInt(this._view32[idx + HEADERS.GENERATION_BYTE_0_32]!)
 
 		if (generation !== currgen) return null
-		if (this._view8[start + HEADERS.DELETED_8] === 1) return null
+		if (this._view8[start + HEADERS.STATUS_8] === 1) return null
 
 		const dataLength = this._view32[idx + HEADERS.PAYLOAD_LENGTH_0_32]!;
 		return this._view8.subarray(start + this.HEADER_SIZE_BYTES, start + this.HEADER_SIZE_BYTES + dataLength);
@@ -153,7 +139,7 @@ export class Arena implements IStorageStrategy {
 		const currgen = this._view32[idx + HEADERS.GENERATION_BYTE_0_32]!
 
 		this._view32[idx + HEADERS.GENERATION_BYTE_0_32] = currgen + 1
-		this._view8[this._u(start) + HEADERS.DELETED_8] = 1
+		this._view8[this._u(start) + HEADERS.STATUS_8] = 1
 
 		const totalBlockSize = this._view32[this._idx32(start) + HEADERS.TOTAL_LENGTH_0_32]!
 		const bucketIdx = (totalBlockSize >> this._alignShift) - 1
@@ -225,6 +211,7 @@ export class Arena implements IStorageStrategy {
 		}
 		this._initBlock(start, size);
 		this._offset = newOffset;
+		this._view8[start + HEADERS.STATUS_8] = 0x01;
 		return this._view8.subarray(
 			start + this.HEADER_SIZE_BYTES,
 			start + this.HEADER_SIZE_BYTES + size
@@ -249,32 +236,61 @@ export class Arena implements IStorageStrategy {
 			isSafe: generation === Number(generation_ptr),
 			totalLength,
 			payloadLength: this._view32[this._idx32(offset) + HEADERS.PAYLOAD_LENGTH_0_32]!,
-			isDeleted: this._view8[offset + HEADERS.DELETED_8] == 1,
+			isDeleted: this._view8[offset + HEADERS.STATUS_8] == 1,
 			payload: this._view8.subarray(offset, offset + totalLength),
 		}
 	}
-	public collectActiveRecords(callback: (data: Uint8Array, ptr: ArenaLocation, idx: number) => void) {
+	collectActiveRecords<K extends ArenaTypeName>(
+		type: K = "Uint8" as K,
+		callback: (data: ArenaTypeMap[K], idx: number) => void,
+	): void {
 		let cursor = 0;
 		let idx = 0;
-		while (cursor < this._offset) {
-			const idx32 = this._idx32(cursor);
-			const totalLength = this._view32[idx32 + HEADERS.TOTAL_LENGTH_0_32]! >>> 0;
 
-			if (totalLength < this.HEADER_SIZE_BYTES) {
-				console.error(`Corrupt block at ${cursor}, length ${totalLength}`);
-				break;
-			}
-			const isDeleted = this._view8[cursor + HEADERS.DELETED_8] === 1;
-			if (!isDeleted) {
-				const payloadLength = this._view32[idx32 + HEADERS.PAYLOAD_LENGTH_0_32]!;
-				const gen = this._view32[idx32 + HEADERS.GENERATION_BYTE_0_32]!;
-				callback(
-					this._view8.subarray(cursor + this.HEADER_SIZE_BYTES, cursor + this.HEADER_SIZE_BYTES + payloadLength),
-					this._makePtr(cursor, gen),
-					idx++
-				);
-			}
+		const v8 = this._view8;
+		const v32 = this._view32;
+		const buffer = v8.buffer;
+		const baseOffset = v8.byteOffset;
+		const limit = this._offset;
+		const headerSize = this.HEADER_SIZE_BYTES;
 
+		const vBigInt64 = new BigInt64Array(buffer);
+		const vUint32 = new Uint32Array(buffer);
+		const vFloat64 = new Float64Array(buffer);
+
+		while (cursor < limit) {
+			const idx32 = cursor >> 2;
+			const totalLength = v32[idx32 + HEADERS.TOTAL_LENGTH_0_32]! >>> 0;
+
+			if (totalLength < headerSize) break;
+
+			if (v8[cursor + HEADERS.STATUS_8] !== 1) {
+				const payloadLength = v32[idx32 + HEADERS.PAYLOAD_LENGTH_0_32]!;
+				const dataOffset = cursor + headerSize;
+				let data: any;
+
+				switch (type) {
+					case "bigint":
+						data = vBigInt64[dataOffset >> 3];
+						break;
+					case "number":
+						data = vUint32[dataOffset >> 2];
+						break;
+					case "string":
+						data = Buffer.from(v8.subarray(dataOffset, dataOffset + payloadLength)).toString("utf8");
+						break;
+					case "Uint8Array":
+						data = v8.subarray(dataOffset, dataOffset + payloadLength);
+						break;
+					default:
+						if (type === "BigInt64Array") data = new BigInt64Array(buffer, baseOffset + dataOffset, 1);
+						else if (type === "Uint32Array") data = new Uint32Array(buffer, baseOffset + dataOffset, 1);
+						else if (type === "Float64Array") data = new Float64Array(buffer, baseOffset + dataOffset, 1);
+						else data = v8.subarray(dataOffset, dataOffset + payloadLength);
+				}
+
+				callback(data, idx++);
+			}
 			cursor += totalLength;
 		}
 	}
@@ -282,12 +298,18 @@ export class Arena implements IStorageStrategy {
 		const step = this._alignMask + 1
 		return ((Math.ceil(size + this.HEADER_SIZE_BYTES) / step) * step) * amnt;
 	}
-	public directAlloc(source: Uint8Array, startn: number, endn: number): ArenaLocation {
+
+	public allocNoPtr(source: ArrayBufferView, startn: number = 0, endn: number = source.byteLength) {
 		const step = this._alignMask + 1;
 		const len = endn - startn;
 		const rawNeeded = len + this.HEADER_SIZE_BYTES;
 		const alignedBlockSize = Math.ceil(rawNeeded / step) * step;
 		const bucketIdx = (alignedBlockSize >> this._alignShift) - 1;
+		const blob = new Uint8Array(
+			source.buffer,
+			source.byteOffset + startn,
+			endn - startn
+		)
 		if (bucketIdx >= 0 && bucketIdx < this._bucketcount) {
 			const count = this._getBucketCount(bucketIdx);
 			if (count > 0) {
@@ -295,7 +317,7 @@ export class Arena implements IStorageStrategy {
 				this._setBucketCount(bucketIdx, count - 1);
 				this._initBlock(recycledOffset, len);
 
-				this._view8.set(source.subarray(startn, endn), recycledOffset + this.HEADER_SIZE_BYTES);
+				this._view8.set(blob, recycledOffset + this.HEADER_SIZE_BYTES);
 
 				const gen = this._view32[this._idx32(recycledOffset) + HEADERS.GENERATION_BYTE_0_32]!;
 				return this._makePtr(recycledOffset, gen);
@@ -307,7 +329,40 @@ export class Arena implements IStorageStrategy {
 			this._resize(alignedBlockSize);
 		}
 		this._initBlock(start, len);
-		this._view8.set(source.subarray(startn, endn), start + this.HEADER_SIZE_BYTES);
+		this._view8.set(blob, start + this.HEADER_SIZE_BYTES);
+		this._offset = nextOffset;
+	}
+	public alloc(source: ArrayBufferView, startn: number = 0, endn: number = source.byteLength): ArenaLocation {
+		const step = this._alignMask + 1;
+		const len = endn - startn;
+		const rawNeeded = len + this.HEADER_SIZE_BYTES;
+		const alignedBlockSize = Math.ceil(rawNeeded / step) * step;
+		const bucketIdx = (alignedBlockSize >> this._alignShift) - 1;
+		const blob = new Uint8Array(
+			source.buffer,
+			source.byteOffset + startn,
+			endn - startn
+		)
+		if (bucketIdx >= 0 && bucketIdx < this._bucketcount) {
+			const count = this._getBucketCount(bucketIdx);
+			if (count > 0) {
+				const recycledOffset = this._getBucketOffset(bucketIdx, count - 1);
+				this._setBucketCount(bucketIdx, count - 1);
+				this._initBlock(recycledOffset, len);
+
+				this._view8.set(blob, recycledOffset + this.HEADER_SIZE_BYTES);
+
+				const gen = this._view32[this._idx32(recycledOffset) + HEADERS.GENERATION_BYTE_0_32]!;
+				return this._makePtr(recycledOffset, gen);
+			}
+		}
+		const start = this._offset;
+		const nextOffset = start + alignedBlockSize;
+		if (nextOffset > this._buffer.byteLength) {
+			this._resize(alignedBlockSize);
+		}
+		this._initBlock(start, len);
+		this._view8.set(blob, start + this.HEADER_SIZE_BYTES);
 		this._offset = nextOffset;
 		const gen = this._view32[this._idx32(start) + HEADERS.GENERATION_BYTE_0_32]!;
 		return this._makePtr(start, gen);
@@ -325,7 +380,7 @@ export class Arena implements IStorageStrategy {
 		if (totalLength === 0) {
 			this._next = (start + 16) & ~15
 		}
-		const isDeleted = this._view8[start + HEADERS.DELETED_8] === 1
+		const isDeleted = this._view8[start + HEADERS.STATUS_8] === 1
 		const ptr = this._makePtr(start, this._view32[this._idx32(start) + HEADERS.GENERATION_BYTE_0_32]!)
 		this._next += totalLength
 

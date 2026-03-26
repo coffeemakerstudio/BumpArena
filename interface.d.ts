@@ -24,6 +24,9 @@ export interface IStorageStrategy {
 	reset(): void
 	clear(): void
 
-	collectActiveRecords(callback: (data: Uint8Array, ptr: ArenaLocation, idx: number) => void);
+	collectActiveRecords<T extends ArenaType = "Uint8Array">(
+		callback: (data: any, ptr: ArenaLocation, idx: number) => void,
+		type: T = "Uint8" as T
+	): void;
 	records(): [Uint8Array, ArenaLocation] | undefined;
 }

@@ -7,7 +7,7 @@ const shmPath = "/dev/shm/Bumparena.db";
 function fastParseInt(uint8: Uint8Array): number {
 	let num = 0;
 	for (let i = 0; i < uint8.length; i++) {
-		num = num * 10 + (uint8[i] - 48);
+		num = num * 10 + (uint8[i]! - 48);
 	}
 	return num;
 }
@@ -29,7 +29,7 @@ function fastParseInt(uint8: Uint8Array): number {
 			const line = file.subarray(pos, i);
 
 			if (line.length > 0) {
-				arena.directAlloc(file, pos, i);
+				arena.alloc(file, pos, i);
 				totalSum += fastParseInt(line);
 				totalRecords++;
 			}
@@ -42,7 +42,7 @@ function fastParseInt(uint8: Uint8Array): number {
 	const file2 = Bun.mmap(shmPath)
 	arena.import(file2.buffer)
 	let newTotalSum = 0;
-	arena.collectActiveRecords((data) => {
+	arena.collectActiveRecords("Uint8Array", (data) => {
 		newTotalSum += fastParseInt(data)
 	})
 
@@ -63,5 +63,9 @@ function fastParseInt(uint8: Uint8Array): number {
 	} else {
 		console.log("Integrity Check:", newTotalSum === totalSum);
 		console.table(stats);
+	}
+
+	if (existsSync(shmPath)) {
+		unlinkSync(shmPath);
 	}
 })()
