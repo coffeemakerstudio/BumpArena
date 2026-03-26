@@ -1,10 +1,16 @@
 # 🚀 BumpArena: High-Performance Memory Management for Bun/TS
 
 [![npm version](https://img.shields.io/npm/v/bumparena.svg?style=flat-square)](https://www.npmjs.com/package/bumparena)
+[![npm downloads](https://img.shields.io/npm/dw/bumparena?style=flat-square&color=blue)](https://www.npmjs.com/package/bumparena)
 [![license](https://img.shields.io/npm/l/bumparena.svg?style=flat-square)](https://github.com/eugen252009/bumparena/blob/main/LICENSE)
 [![Logic Test](https://github.com/eugen252009/BumpArena/actions/workflows/logic%20test.yml/badge.svg)](https://github.com/eugen252009/BumpArena/actions/workflows/logic%20test.yml)
+[![GitHub stars](https://img.shields.io/github/stars/eugen252009/bumparena?style=flat-square&color=gold)](https://github.com/eugen252009/bumparena/stargazers)
+[![types](https://img.shields.io/npm/types/bumparena?style=flat-square&color=blue)](https://www.npmjs.com/package/bumparena)
+[![maintenance](https://img.shields.io/badge/maintained-yes-brightgreen.svg?style=flat-square)](https://github.com/eugen252009/bumparena/graphs/commit-activity)
+[![GitHub discussions](https://img.shields.io/github/discussions/eugen252009/bumparena?style=flat-square&color=blueviolet)](https://github.com/eugen252009/bumparena/discussions)
 
 BumpArena is a high-performance memory arena designed for JavaScript and TypeScript (optimized for Bun). It provides contiguous memory allocation, fast pointer-based access, and minimal Garbage Collection (GC) overhead—ideal for handling industrial-scale datasets and real-time telemetry.
+
 
 ---
 
@@ -99,6 +105,17 @@ JSON or CSV parsing takes seconds every time your app restarts.
 ## 🚫 When NOT to use it
 * **Small Datasets:** For < 100,000 items, standard V8/JSC optimization is usually "good enough."
 * **High Volatility:** If your data structure changes constantly or you need frequent random inserts/deletes, a classic collection might be more flexible.
+
+---
+
+## 🏗️ Built with BumpArena?
+
+Are you using **BumpArena** in your project? Whether you are building a high-frequency trading bot, a custom database engine, or a real-time game server—I’d love to hear about it!
+
+* **Showcase your work:** Open a [Discussion](https://github.com/eugen252009/bumparena/discussions) or an [Issue](https://github.com/eugen252009/bumparena/issues) with a short description of your project.
+* **Get Featured:** I will feature interesting use cases right here in the README with a link to your repository or website.
+
+It’s a great way to show the community what’s possible when you move past standard JavaScript memory limits.
 
 ---
 
