@@ -89,10 +89,10 @@ function bytesToBigIntFast(uint8Array: Uint8Array, start: number, len: number): 
 	if (process.env.BENCH_JSON) {
 		console.log(`---JSON---${JSON.stringify(stats)}`);
 	} else {
-		const res = (totalSum === newTotalSum) && 111258601765802987051n
-		if (res) console.log("Integrity Check: ", true);
+		const res = !!((totalSum === newTotalSum) && 111258601765802987051n)
+		if (res) console.log("Integrity Check: ", res);
 		else {
-			console.log({ newTotalSum, totalSum, needed: 111304187885967550850n });
+			console.log({ newTotalSum, totalSum, needed: 111258601765802987051n });
 		}
 		console.table(stats);
 	}
