@@ -42,7 +42,7 @@ BumpArena is **Runtime-Bound** (or "Type-Conversion-Bound"). Because the logic o
 
 ## 📊 Understanding the Benchmark
 
-To push **BumpArena** to its limits, the benchmark simulates a high-throughput pipeline processing **50 million records**.
+To push **BumpArena** to its limits, the benchmark simulates a high-throughput pipeline processing **10 million records**.
 
 ### 1. Data Ingestion (The "Engine-Bound" Phase)
 Ingesting massive amounts of data involves expensive string parsing and type conversion. Here, the JS engine hits its limits (JS-to-Binary Bridge) while the Arena logic is already waiting for the data.
