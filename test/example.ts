@@ -26,7 +26,7 @@ const savedData = fs.readFileSync("database.bin");
 const restoredArena = new Arena({ initialSize: 1024 * 1024 * 1024 }) // Structure is restored instantly
 	.import(savedData.buffer);
 // Clean the Mess up we did earlier
-fs.rmSync("database.bin")
+// fs.rmSync("database.bin")
 
 // Free some Items 
 restoredArena.free(ptr)

@@ -1,10 +1,10 @@
 # Benchmark Breakdown
 
-*last updated: 3/26/2026, 9:03:20 PM*
+*last updated: 3/29/2026, 10:06:11 AM*
 
-| Metric | Naive Array | Standard Array | **BumpArena** | **BumpArena (TURBO)** |
-| :--- | --- | --- | --- | --- |
-| totalTime | 2.983s | 6.29s | 5.006s | 4.034s |
-| throughput | 3,352,763 lines/s | 1,589,609 lines/s | 1,997,556 lines/s | 2,479,058 lines/s |
-| rss | 1.73 GB | 1.80 GB | 2.25 GB | 1.39 GB |
-| heap | 0.57 GB | 0.69 GB | 0.64 GB | 0.60 GB |
+| Metric | Standard Uint8Array | **BumpArena (TURBO)** |
+| :--- | --- | --- |
+| throughput_in | 6,833,864 lines/s | 6,296,518 lines/s |
+| throughput_out | 15,283 lines/s | 1,608,221 lines/s |
+| rss | 12.273 GB | 11.844 GB |
+| heap | 4.001 GB | 3.733 GB |

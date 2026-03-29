@@ -8,6 +8,7 @@ export const  enum HEADERS {
 	MAGIC_BYTE_0 = 13,
 	MAGIC_BYTE_1 = 14,
 	MAGIC_BYTE_2 = 15,
+	Total_Size_In_Bytes = 16,
 }
 export const enum BlockStatus {
 	Ready = 0x00,
@@ -26,6 +27,7 @@ interface ArenaTypeMap {
 	"bigint": bigint;
 	"string": string;
 	"number": number;
+	"Float64": number;
 }
 type ArenaTypeName = keyof ArenaTypeMap
 
@@ -110,7 +112,6 @@ export class Arena {
 	}
 
 	private _initBlock(start: number, dataLength: number) {
-		// const start = Atomics.add(this._view32, OFFSET_INDEX, needed);
 		const rawSize = dataLength + this.HEADER_SIZE_BYTES;
 		const alignedSize = (rawSize + this._alignMask) & ~this._alignMask;
 		const idx = this._idx32(start)
@@ -126,9 +127,11 @@ export class Arena {
 		const { offset: start, generation } = this._smallInspect(location);
 		const idx = this._idx32(start)
 		const currgen = BigInt(this._view32[idx + HEADERS.GENERATION_BYTE_0_32]!)
+		const status = this._view8[idx + HEADERS.STATUS_8]!
 
 		if (generation !== currgen) return null
-		if (this._view8[start + HEADERS.STATUS_8] === 1) return null
+		if ((status & 0x0000) !== 0) return null
+		if (this._view8[start + HEADERS.STATUS_8] != 0) return null
 
 		const dataLength = this._view32[idx + HEADERS.PAYLOAD_LENGTH_0_32]!;
 		return this._view8.subarray(start + this.HEADER_SIZE_BYTES, start + this.HEADER_SIZE_BYTES + dataLength);
@@ -172,7 +175,6 @@ export class Arena {
 			newSize = this.MAX_ARENA_SIZE;
 		}
 
-		// Wenn selbst die 4GB (newSize) nicht für den Request reichen
 		if (newSize < requestedTotal) {
 			console.log("DEBUG:", this._offset, this._buffer.byteLength, "Requested:", requestedTotal);
 			throw new Error(
@@ -240,6 +242,7 @@ export class Arena {
 			payload: this._view8.subarray(offset, offset + totalLength),
 		}
 	}
+
 	collectActiveRecords<K extends ArenaTypeName>(
 		type: K = "Uint8" as K,
 		callback: (data: ArenaTypeMap[K], idx: number) => void,
@@ -259,33 +262,34 @@ export class Arena {
 		const vFloat64 = new Float64Array(buffer);
 
 		while (cursor < limit) {
-			const idx32 = cursor >> 2;
+			const idx32 = cursor / 4;
 			const totalLength = v32[idx32 + HEADERS.TOTAL_LENGTH_0_32]! >>> 0;
 
 			if (totalLength < headerSize) break;
 
-			if (v8[cursor + HEADERS.STATUS_8] !== 1) {
+			if (v8[cursor + HEADERS.STATUS_8] === 0) {
 				const payloadLength = v32[idx32 + HEADERS.PAYLOAD_LENGTH_0_32]!;
 				const dataOffset = cursor + headerSize;
 				let data: any;
 
 				switch (type) {
 					case "bigint":
-						data = vBigInt64[dataOffset >> 3];
+						data = vBigInt64[(baseOffset + dataOffset) / 8];
 						break;
 					case "number":
-						data = vUint32[dataOffset >> 2];
+						data = vUint32[dataOffset / 4];
 						break;
 					case "string":
 						data = Buffer.from(v8.subarray(dataOffset, dataOffset + payloadLength)).toString("utf8");
 						break;
-					case "Uint8Array":
-						data = v8.subarray(dataOffset, dataOffset + payloadLength);
-						break;
+					case "Float64":
+						data = vFloat64[(baseOffset + dataOffset) / 8]!;
+						break
+
 					default:
-						if (type === "BigInt64Array") data = new BigInt64Array(buffer, baseOffset + dataOffset, 1);
-						else if (type === "Uint32Array") data = new Uint32Array(buffer, baseOffset + dataOffset, 1);
-						else if (type === "Float64Array") data = new Float64Array(buffer, baseOffset + dataOffset, 1);
+						if (type === "BigInt64Array") data = new BigInt64Array(buffer, baseOffset + dataOffset, payloadLength / 8);
+						else if (type === "Uint32Array") data = new Uint32Array(buffer, dataOffset, payloadLength / 4);
+						else if (type === "Float64Array") data = new Float64Array(buffer, dataOffset, payloadLength / 8);
 						else data = v8.subarray(dataOffset, dataOffset + payloadLength);
 				}
 
@@ -299,49 +303,46 @@ export class Arena {
 		return ((Math.ceil(size + this.HEADER_SIZE_BYTES) / step) * step) * amnt;
 	}
 
-	public allocNoPtr(source: ArrayBufferView, startn: number = 0, endn: number = source.byteLength) {
+	public allocNoPtr(source: ArrayBufferView, offset: number = 0, length: number = source.byteLength) {
 		const step = this._alignMask + 1;
-		const len = endn - startn;
-		const rawNeeded = len + this.HEADER_SIZE_BYTES;
+		const rawNeeded = length + this.HEADER_SIZE_BYTES;
 		const alignedBlockSize = Math.ceil(rawNeeded / step) * step;
 		const bucketIdx = (alignedBlockSize >> this._alignShift) - 1;
-		const blob = new Uint8Array(
-			source.buffer,
-			source.byteOffset + startn,
-			endn - startn
-		)
+		const blob = new Uint8Array(source.buffer, offset, length)
 		if (bucketIdx >= 0 && bucketIdx < this._bucketcount) {
 			const count = this._getBucketCount(bucketIdx);
 			if (count > 0) {
 				const recycledOffset = this._getBucketOffset(bucketIdx, count - 1);
 				this._setBucketCount(bucketIdx, count - 1);
-				this._initBlock(recycledOffset, len);
+				this._initBlock(recycledOffset, length);
 
 				this._view8.set(blob, recycledOffset + this.HEADER_SIZE_BYTES);
 
 				const gen = this._view32[this._idx32(recycledOffset) + HEADERS.GENERATION_BYTE_0_32]!;
+
+				this._view8[recycledOffset + HEADERS.STATUS_8] = BlockStatus.Ready;
 				return this._makePtr(recycledOffset, gen);
 			}
 		}
+
 		const start = this._offset;
 		const nextOffset = start + alignedBlockSize;
-		if (nextOffset > this._buffer.byteLength) {
-			this._resize(alignedBlockSize);
-		}
-		this._initBlock(start, len);
+
+		this._initBlock(start, length);
 		this._view8.set(blob, start + this.HEADER_SIZE_BYTES);
+		this._view8[start + HEADERS.STATUS_8] = BlockStatus.Ready;
 		this._offset = nextOffset;
 	}
-	public alloc(source: ArrayBufferView, startn: number = 0, endn: number = source.byteLength): ArenaLocation {
+	public alloc(source: ArrayBufferView, startn: number = 0, length: number = source.byteLength): ArenaLocation {
 		const step = this._alignMask + 1;
-		const len = endn - startn;
+		const len = length - startn;
 		const rawNeeded = len + this.HEADER_SIZE_BYTES;
 		const alignedBlockSize = Math.ceil(rawNeeded / step) * step;
 		const bucketIdx = (alignedBlockSize >> this._alignShift) - 1;
 		const blob = new Uint8Array(
 			source.buffer,
 			source.byteOffset + startn,
-			endn - startn
+			length - startn
 		)
 		if (bucketIdx >= 0 && bucketIdx < this._bucketcount) {
 			const count = this._getBucketCount(bucketIdx);
@@ -351,8 +352,8 @@ export class Arena {
 				this._initBlock(recycledOffset, len);
 
 				this._view8.set(blob, recycledOffset + this.HEADER_SIZE_BYTES);
-
 				const gen = this._view32[this._idx32(recycledOffset) + HEADERS.GENERATION_BYTE_0_32]!;
+				this._view8[recycledOffset + HEADERS.STATUS_8] = BlockStatus.Ready;
 				return this._makePtr(recycledOffset, gen);
 			}
 		}
@@ -365,6 +366,7 @@ export class Arena {
 		this._view8.set(blob, start + this.HEADER_SIZE_BYTES);
 		this._offset = nextOffset;
 		const gen = this._view32[this._idx32(start) + HEADERS.GENERATION_BYTE_0_32]!;
+		this._view8[start + HEADERS.STATUS_8] = BlockStatus.Ready;
 		return this._makePtr(start, gen);
 	}
 
@@ -373,22 +375,25 @@ export class Arena {
 		this._emptySpots.fill(0)
 	}
 
-	public records(): ([Uint8Array, ArenaLocation] | undefined) {
-		const start = this._next
-		const totalLength = this._view32[this._idx32(start) + HEADERS.TOTAL_LENGTH_0_32]!
-		const payloadLength = this._view32[this._idx32(start) + HEADERS.PAYLOAD_LENGTH_0_32]!
-		if (totalLength === 0) {
-			this._next = (start + 16) & ~15
-		}
-		const isDeleted = this._view8[start + HEADERS.STATUS_8] === 1
-		const ptr = this._makePtr(start, this._view32[this._idx32(start) + HEADERS.GENERATION_BYTE_0_32]!)
-		this._next += totalLength
+	public *records(): (Generator<[Uint8Array, ArenaLocation]>) {
+		while (this._next < this._offset) {
+			const start = this._next
+			const totalLength = this._view32[this._idx32(start) + HEADERS.TOTAL_LENGTH_0_32]!
+			const payloadLength = this._view32[this._idx32(start) + HEADERS.PAYLOAD_LENGTH_0_32]!
+			const generation = this._view32[this._idx32(start) + HEADERS.GENERATION_BYTE_0_32]!
+			if (totalLength === 0) {
+				this._next = (start + 16) & ~15
+			}
+			const isAvailable = this._view8[start + HEADERS.STATUS_8] !== 0
+			const ptr = this._makePtr(start, generation)
+			this._next += totalLength
 
-		if (!isDeleted) {
-			return [
-				this._view8.subarray(start + this.HEADER_SIZE_BYTES, start + this.HEADER_SIZE_BYTES + payloadLength),
-				ptr
-			]
+			if (!isAvailable) {
+				yield [
+					this._view8.subarray(start + this.HEADER_SIZE_BYTES, start + this.HEADER_SIZE_BYTES + payloadLength),
+					ptr
+				]
+			}
 		}
 	}
 	public reset() {

@@ -1,9 +1,13 @@
 import { spawnSync } from "bun";
+import { exists } from "fs/promises"
+import { generateData, testfile } from "./init";
+
+if (!(await exists(testfile()))) {
+	generateData(12345, 500_000_000)
+}
 
 const benchmarks = [
-	{ id: "naive Array", path: "bench/implementation_naive-array.js", label: "Naive Array" },
-	{ id: "optimized Array", path: "bench/implementation_array.js", label: "Standard Array" },
-	{ id: "normal Arena", path: "bench/implementation_arena.js", label: "**BumpArena**" },
+	{ id: "native Uint8Array", path: "bench/implementation_array.js", label: "Standard Uint8Array" },
 	{ id: "optimized Arena", path: "bench/implementation_arena-turbo.ts", label: "**BumpArena (TURBO)**" },
 ];
 
@@ -23,7 +27,7 @@ for (const b of benchmarks) {
 		try {
 			const input = proc.stdout.toString()
 			const data = JSON.parse(input.split("---JSON---")[1]!);
-			console.log("DEBUG - ", data);
+			// console.log("DEBUG - ", data);
 			results.push({ ...b, ...data });
 			console.log("✅");
 		} catch (e) {
@@ -47,7 +51,7 @@ if (results.length === benchmarks.length) {
 	md += `| Metric | ${labels} |\n`;
 	md += `| :--- | ${separator} |\n`;
 
-	const metrics = ["totalTime", "throughput", "rss", "heap"];
+	const metrics = ["throughput_in", "throughput_out", "rss", "heap"];
 
 	metrics.forEach(metric => {
 		const values = results.map(r => {

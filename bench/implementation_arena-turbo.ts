@@ -1,83 +1,116 @@
-import Bun from "bun";
-import { Arena } from "../arena.ts";
 import { testfile } from "./init.ts"
-import { unlinkSync, existsSync } from "node:fs";
-const MAX_SAFE = 9007199254740991;
-const shmPath = "/dev/shm/Bumparena.db";
-function fastParseInt(uint8: Uint8Array): number {
-	let num = 0;
-	for (let i = 0; i < uint8.length; i++) {
-		const digit = uint8[i]! - 48;
-		num = num * 10 + (uint8[i]! - 48);
-		if (num > (MAX_SAFE - digit) / 10) {
-			throw new Error("BumpArena: Numeric overflow - value exceeds MAX_SAFE_INTEGER. Use BigInt for this dataset.");
-		}
+import { exists, unlink } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { Arena, HEADERS } from "../arena.ts";
+import { fastParseNumber } from "./helper.ts";
+
+// const finalresult = 1250153526357600n
+const finalresult = 5554728545810779096126n
+const shmPath = "/dev/shm/Bumparena_arena.db";
+const start = performance.now()
+let ingest: number = 0;
+let end: number = 0;
+let totalSum = 0n;
+let newTotalSum = 0n;
+
+const arena = new Arena({ bucketCapacities: [], initialSize: 2 ** 32 })
+const rf = createReadStream(testfile(), { highWaterMark: 16 * 1024 * 1024 });
+const Bigstoragelen = 1024 - HEADERS.Total_Size_In_Bytes / 8;
+const BigStorage = new Float64Array(Bigstoragelen);
+let bigstorageidx = 0;
+let totalRecords = 0;
+
+function processNumber(buf: Uint8Array) {
+	if (bigstorageidx >= Bigstoragelen) {
+		arena.allocNoPtr(BigStorage);
+		totalRecords += bigstorageidx;
+		bigstorageidx = 0;
 	}
-	return num;
+
+	fastParseNumber(buf, 0, buf.length, BigStorage, bigstorageidx++);
 }
 
 (async () => {
-	if (existsSync(shmPath)) {
-		unlinkSync(shmPath);
-	}
-	const start = performance.now()
-	const file = Bun.mmap(testfile);
-	const arena = new Arena({ initialSize: 320000000 });
+	if (await exists(shmPath)) await unlink(shmPath);
 
-	let totalSum = 0;
-	let totalRecords = 0;
-	let pos = 0;
 
-	for (let i = 0; i < file.length; i++) {
-		if (file[i] === 10) {
-			const line = file.subarray(pos, i);
+	let leftover: Uint8Array | null = null;
 
-			if (line.length > 0) {
-				arena.allocNoPtr(file, pos, i);
-				totalSum += fastParseInt(line);
-				totalRecords++;
+	for await (const chunk of rf) {
+		let data = chunk as Uint8Array;
+
+		if (leftover) {
+			const joined = Buffer.allocUnsafe(leftover.length + chunk.length);
+			joined.set(leftover);
+			joined.set(chunk, leftover.length);
+			data = joined;
+			leftover = null;
+		}
+
+		let i = 0;
+		while (true) {
+			const pos = data.indexOf(10, i);
+
+			if (pos === -1) {
+				const remaining = data.subarray(i);
+				if (remaining.length > 0) {
+					leftover = Buffer.allocUnsafe(remaining.length);
+					leftover.set(remaining);
+				}
+				break;
 			}
-			pos = i + 1;
+
+			processNumber(data.subarray(i, pos));
+			i = pos + 1;
 		}
 	}
 
+	if (bigstorageidx > 0) {
+		console.log("Letzter Batch hat nur", bigstorageidx, "Elemente.");
+		arena.allocNoPtr(BigStorage.subarray(0, bigstorageidx));
+		totalRecords += bigstorageidx;
+		bigstorageidx = 0;
+	}
+
+	arena.collectActiveRecords("Float64Array", (data) => {
+		for (const item of data) {
+			totalSum += BigInt(item);
+		}
+	})
+	ingest = performance.now()
 	await Bun.write(shmPath, arena.getBuffer())
+	const persist = performance.now()
 	arena.clear()
-	const persist = performance.now();
-	const file2 = Bun.mmap(shmPath)
-	arena.import(file2.buffer)
-	const recover = performance.now();
-	let newTotalSum = 0;
-	arena.collectActiveRecords("Uint8Array", (data) => {
-		newTotalSum += fastParseInt(data)
+	const newFile = Bun.mmap(shmPath)
+	arena.import(newFile.buffer)
+	const recover = performance.now()
+	arena.collectActiveRecords("Float64Array", () => { })
+	const recover2 = performance.now()
+	arena.collectActiveRecords("Float64Array", () => { })
+	end = performance.now()
+	arena.collectActiveRecords("Float64Array", (data) => {
+		for (const item of data) {
+			newTotalSum += BigInt(item)
+		}
 	})
 
-
-	const end = performance.now();
-	const totalTimeMs = end - start;
-	const durationSec = totalTimeMs / 1000;
-
+	console.log(`Total Time: ${(end - start).toFixed(3)} ms`)
 	const stats = {
-		totalTime: durationSec.toFixed(3) + "s",
-		throughput: Math.round(totalRecords / durationSec).toLocaleString() + " lines/s",
-		rss: (process.memoryUsage().rss / 1024 ** 3).toFixed(2) + " GB",
-		heap: (process.memoryUsage().heapUsed / 1024 ** 3).toFixed(2) + " GB",
-		persist: ((persist - start) / 1000).toFixed(3) + "s",
-		recover: ((recover - persist) / 1000).toFixed(3) + "s",
+		items: totalRecords,
+		throughput_in: Math.round(totalRecords / ((ingest - start) / 1000)).toLocaleString() + " lines/s",
+		throughput_out: Math.round(totalRecords / (end - recover)).toLocaleString() + " lines/s",
+		throughput_out_raw: `${Math.round(totalRecords / (recover2 - recover)).toLocaleString()} lines/s`,
+		rss: `${(process.memoryUsage().rss / 1024 ** 3).toFixed(3)} GB`,
+		heap: `${(process.memoryUsage().heapUsed / 1024 ** 3).toFixed(3)} GB`,
+		persist: `${((persist - ingest)).toFixed(3)} ms`,
+		recover: `${((recover - persist)).toFixed(3)} ms`,
 	};
-
 	if (process.env.BENCH_JSON) {
 		process.stdout.write(`---JSON---${JSON.stringify(stats)}`);
 	} else {
-		const res = !!((totalSum === newTotalSum) && 111258601765802987051n)
-		if (res) console.log("Integrity Check: ", res);
-		else {
-			console.log({ newTotalSum, totalSum, needed: 111258601765802987051n });
-		}
+		console.log("Integrity Check at 500M items:", totalSum === newTotalSum && totalSum === finalresult);
 		console.table(stats);
+		console.log(`Arena size: ${arena.size()} bytes`)
 	}
-
-	if (existsSync(shmPath)) {
-		unlinkSync(shmPath);
-	}
+	if (await exists(shmPath)) await unlink(shmPath);
 })()
