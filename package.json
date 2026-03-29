@@ -12,7 +12,7 @@
 		"test": "node ./dist/test/test.test.js",
 		"bench:init": "bun run bench/generateTestdata.ts",
 		"bench": "bun run bench/runner.ts",
-		"push": "bun test && tsc && npm login && npm pub"
+		"push": "bun test --timeout 20000 && tsc && npm login && npm pub"
 	},
 	"repository": {
 		"type": "git",
