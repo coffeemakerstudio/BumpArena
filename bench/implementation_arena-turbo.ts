@@ -4,10 +4,8 @@ import { createReadStream } from "node:fs";
 import { Arena, HEADERS } from "../arena.ts";
 import { fastParseNumber } from "./helper.ts";
 
-// const finalresult = 1250153526357600n
 const finalresult = 5554728545810779096126n
 const shmPath = "/dev/shm/Bumparena_arena.db";
-const start = performance.now()
 let ingest: number = 0;
 let end: number = 0;
 let totalSum = 0n;
@@ -34,6 +32,7 @@ function processNumber(buf: Uint8Array) {
 	if (await exists(shmPath)) await unlink(shmPath);
 
 
+	const start = performance.now()
 	let leftover: Uint8Array | null = null;
 
 	for await (const chunk of rf) {
@@ -66,7 +65,6 @@ function processNumber(buf: Uint8Array) {
 	}
 
 	if (bigstorageidx > 0) {
-		console.log("Letzter Batch hat nur", bigstorageidx, "Elemente.");
 		arena.allocNoPtr(BigStorage.subarray(0, bigstorageidx));
 		totalRecords += bigstorageidx;
 		bigstorageidx = 0;
@@ -86,19 +84,16 @@ function processNumber(buf: Uint8Array) {
 	const recover = performance.now()
 	arena.collectActiveRecords("Float64Array", () => { })
 	const recover2 = performance.now()
-	arena.collectActiveRecords("Float64Array", () => { })
-	end = performance.now()
 	arena.collectActiveRecords("Float64Array", (data) => {
-		for (const item of data) {
-			newTotalSum += BigInt(item)
-		}
+		for (const item of data) newTotalSum += BigInt(item)
 	})
+	end = performance.now()
 
 	console.log(`Total Time: ${(end - start).toFixed(3)} ms`)
 	const stats = {
 		items: totalRecords,
 		throughput_in: Math.round(totalRecords / ((ingest - start) / 1000)).toLocaleString() + " lines/s",
-		throughput_out: Math.round(totalRecords / (end - recover)).toLocaleString() + " lines/s",
+		throughput_out: Math.round(totalRecords / (end - recover2)).toLocaleString() + " lines/s",
 		throughput_out_raw: `${Math.round(totalRecords / (recover2 - recover)).toLocaleString()} lines/s`,
 		rss: `${(process.memoryUsage().rss / 1024 ** 3).toFixed(3)} GB`,
 		heap: `${(process.memoryUsage().heapUsed / 1024 ** 3).toFixed(3)} GB`,

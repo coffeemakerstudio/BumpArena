@@ -3,7 +3,6 @@ import { exists, unlink } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { fastParseNumber } from "./helper.ts";
 const shmPath = "/dev/shm/Bumparena.db";
-const start = performance.now()
 let ingest: number = 0;
 let end: number = 0;
 let totalSum = 0n;
@@ -32,6 +31,7 @@ function processNumber(buf: Uint8Array) {
 	if (await exists(shmPath)) {
 		await unlink(shmPath);
 	}
+	const start = performance.now()
 	let leftover: Uint8Array | null = null;
 
 	rf.on("data", (chunk: Uint8Array) => {
@@ -87,16 +87,13 @@ function processNumber(buf: Uint8Array) {
 	const recover = performance.now()
 	for (const _ of arena) { }
 	const recover2 = performance.now()
-
-	for (const item of arena) {
-		newTotalSum += BigInt(item)
-	}
+	for (const item of arena) { newTotalSum += BigInt(item) }
 	end = performance.now()
 
 	console.log(`Total Time: ${(end - start).toFixed(3)} ms`)
 	const stats = {
 		throughput_in: Math.round(totalRecords / ((ingest - start) / 1000)).toLocaleString() + " lines/s",
-		throughput_out: Math.round(totalRecords / (end - recover)).toLocaleString() + " lines/s",
+		throughput_out: Math.round(totalRecords / (end - recover2)).toLocaleString() + " lines/s",
 		throughput_out_raw: `${Math.round(totalRecords / (recover2 - recover)).toLocaleString()} lines/s`,
 		rss: `${(process.memoryUsage().rss / 1024 ** 3).toFixed(3)} GB`,
 		heap: `${(process.memoryUsage().heapUsed / 1024 ** 3).toFixed(3)} GB`,
