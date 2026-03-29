@@ -34,7 +34,7 @@ function processNumber(buf: Uint8Array) {
 	const start = performance.now()
 	let leftover: Uint8Array | null = null;
 
-	rf.on("data", (chunk: Uint8Array) => {
+	for await (const chunk of rf) {
 		let data = chunk;
 
 		if (leftover) {
@@ -61,19 +61,16 @@ function processNumber(buf: Uint8Array) {
 			processNumber(data.subarray(i, pos));
 			i = pos + 1;
 		}
-	});
+	};
 
-	await new Promise((res, _rej) => rf.on("close", () => {
-		if (bigstorageidx > 0) {
-			const finalChunk = BigStorage.subarray(0, bigstorageidx);
-			arena.set(finalChunk, arenaidx);
-			arenaidx += finalChunk.length
-			totalRecords += bigstorageidx;
-			bigstorageidx = 0
-		}
-		res(undefined)
-		return
-	}))
+	if (bigstorageidx > 0) {
+		const finalChunk = BigStorage.subarray(0, bigstorageidx);
+		arena.set(finalChunk, arenaidx);
+		arenaidx += finalChunk.length
+		totalRecords += bigstorageidx;
+		bigstorageidx = 0
+	}
+
 	for (const item of arena) {
 		totalSum += BigInt(item)
 	}
