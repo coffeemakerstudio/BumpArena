@@ -120,4 +120,7 @@ It’s a great way to show the community what’s possible when you move past st
 ---
 
 ## License
-MIT © eugen252009
+
+MIT @ Coffee Maker Studio
+
+*„Part of the Coffee Maker Studio ecosystem. Built for performance, licensed for everyone.“*
